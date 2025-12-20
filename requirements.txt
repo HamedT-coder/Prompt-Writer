@@ -1,12 +1,3 @@
-Requirements:
-- Python 3.10+
-- python-telegram-bot >= 20
-- agenta (self-hosted or cloud, open-source)
-
-Environment Variables:
-- TELEGRAM_BOT_TOKEN : Telegram bot token
-- AGENTA_API_KEY     : Agenta API key
-- AGENTA_HOST        : Agenta host URL (e.g. http://localhost:3000)
-
-Install dependencies:
-pip install python-telegram-bot agenta requests python-dotenv
+Python 3.10+
+python-telegram-bot >= 20
+agenta (self-hosted or cloud, open-source)
