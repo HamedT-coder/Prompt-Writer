@@ -28,12 +28,12 @@ logger = logging.getLogger("prompt-bot")
 # ======================================================
 # Environment Variables
 # ======================================================
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 AGENTA_HOST = os.getenv("AGENTA_HOST", "https://cloud.agenta.ai")
 PORT = int(os.getenv("PORT", "10000"))
 
-if not TELEGRAM_BOT_TOKEN:
+if not BOT_TOKEN:
     raise RuntimeError("Missing TELEGRAM_BOT_TOKEN")
 
 if not AGENTA_API_KEY:
@@ -64,54 +64,32 @@ class AgentaClient:
         }
 
         try:
-            response = requests.post(
-                url, json=payload, headers=headers, timeout=self.timeout
-            )
-            response.raise_for_status()
-            data = response.json()
-
-            result = (
-                data.get("outputs", {})
-                .get("response")
-            )
-
-            if not result:
-                return "❌ پاسخی از Agenta دریافت نشد."
-
-            return result.strip()
-
-        except requests.exceptions.Timeout:
-            return "⏳ پاسخ Agenta طول کشید، دوباره امتحان کن."
-        except requests.exceptions.RequestException as exc:
-            logger.error("Agenta error: %s", exc)
+            r = requests.post(url, json=payload, headers=headers, timeout=self.timeout)
+            r.raise_for_status()
+            data = r.json()
+            return data.get("outputs", {}).get("response", "❌ پاسخی دریافت نشد.")
+        except Exception:
+            logger.exception("Agenta error")
             return "❌ خطا در ارتباط با Agenta."
 
-
-agenta = AgentaClient(
-    host=AGENTA_HOST,
-    api_key=AGENTA_API_KEY,
-)
+agenta = AgentaClient(AGENTA_HOST, AGENTA_API_KEY)
 
 # ======================================================
-# Telegram Bot Handlers
+# Telegram Handlers
 # ======================================================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👋 سلام!\n\n"
         "من دستیار فارسی نوشتن پرامپت هستم ✨\n"
-        "ایده یا درخواستت رو بفرست تا برات یک پرامپت حرفه‌ای بسازم."
+        "ایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
     )
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🧠 راهنما:\n\n"
-        "هر چیزی که می‌خوای از هوش مصنوعی بگیری رو به زبان ساده بنویس.\n"
-        "من اون رو تبدیل به یک پرامپت استاندارد می‌کنم.\n\n"
-        "مثال:\n"
-        "«یه پرامپت برای تولید کپشن اینستاگرام درباره استارتاپ‌ها»"
+        "🧠 راهنما:\n"
+        "هر چیزی که می‌خوای از هوش مصنوعی بگیری رو بنویس.\n"
+        "من اون رو به پرامپت حرفه‌ای تبدیل می‌کنم."
     )
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text: Optional[str] = update.message.text
@@ -123,23 +101,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("⏳ در حال ساخت پرامپت...")
 
     loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(
-        None, agenta.generate_prompt, text
-    )
+    result = await loop.run_in_executor(None, agenta.generate_prompt, text)
 
-    await update.message.reply_text(
-        f"📝 پرامپت پیشنهادی:\n\n{result}"
-    )
-
-
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error("Telegram error: %s", context.error)
+    await update.message.reply_text(f"📝 پرامپت پیشنهادی:\n\n{result}")
 
 # ======================================================
-# FastAPI (for Render Free)
+# FastAPI (برای Render Free)
 # ======================================================
 app = FastAPI()
-
 
 @app.get("/")
 async def health():
@@ -149,14 +118,13 @@ async def health():
 # Runners
 # ======================================================
 async def run_telegram_bot():
-    application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+    application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
-    application.add_error_handler(error_handler)
 
     await application.initialize()
     await application.start()
@@ -164,24 +132,16 @@ async def run_telegram_bot():
     await application.updater.start_polling()
     await application.updater.idle()
 
-
 async def run_web_server():
-    config = uvicorn.Config(
-        app=app,
-        host="0.0.0.0",
-        port=PORT,
-        log_level="info",
-    )
+    config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
     server = uvicorn.Server(config)
     await server.serve()
-
 
 async def main():
     await asyncio.gather(
         run_telegram_bot(),
         run_web_server(),
     )
-
 
 if __name__ == "__main__":
     asyncio.run(main())
