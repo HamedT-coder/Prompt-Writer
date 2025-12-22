@@ -89,17 +89,23 @@ async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error)
     
 # ================= FAKE SERVER =================
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
+
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def start_fake_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+threading.Thread(target=start_fake_server, daemon=True).start()
 
 def main():
-    # ✅ اول پورت رو باز کن (خیلی مهم)
-    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
-    print(f"🌐 Fake server listening on {PORT}")
-
-    # 🔹 بعد ربات رو تو thread جدا اجرا کن
-    threading.Thread(target=run_bot, daemon=True).start()
-
-    # 🔒 سرور باید بلاک کنه
-    server.serve_forever()
     application.add_error_handler(error_handler)
 if __name__ == "__main__":
     main()
