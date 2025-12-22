@@ -1,4 +1,6 @@
 import os
+import threading
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
@@ -12,64 +14,56 @@ from telegram.ext import (
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
 
-# ---------------- Handlers ----------------
+# ---------- Dummy Web Server ----------
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Bot is running")
 
+def start_web_server():
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    server.serve_forever()
+
+
+# ---------- Telegram Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✍️ سلام!\n"
         "من ربات Prompt Writer هستم.\n"
-        "موضوع یا ایده‌ت رو بفرست تا برات پرامپت بسازم."
+        "ایده‌تو بفرست تا پرامپت بسازم."
     )
-
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📌 راهنما:\n"
-        "- فقط کافیه ایده یا موضوعت رو بفرستی\n"
-        "- من برات یک پرامپت حرفه‌ای می‌نویسم"
-    )
-
 
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text.strip()
-
-    if len(user_text) < 5:
-        await update.message.reply_text("❗️ لطفاً توضیح کامل‌تری بفرست.")
-        return
+    text = update.message.text.strip()
 
     prompt = (
         "You are an expert prompt engineer.\n"
-        f"Write a high-quality AI prompt based on the following idea:\n\n"
-        f"{user_text}\n\n"
-        "The prompt should be clear, detailed, and professional."
+        f"Create a professional AI prompt for this idea:\n{text}"
     )
 
     await update.message.reply_text(
-        "🧠 پرامپت پیشنهادی:\n\n"
-        f"```{prompt}```",
+        f"🧠 پرامپت:\n```{prompt}```",
         parse_mode="Markdown"
     )
 
 
-# ---------------- Main ----------------
-
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Start fake web server
+    threading.Thread(target=start_web_server, daemon=True).start()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt)
-    )
+    app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
 
-    print("🤖 Prompt Writer Bot started (Polling)...")
-
-    application.run_polling()
+    print("🤖 Bot running with polling + web port")
+    app.run_polling()
 
 
 if __name__ == "__main__":
