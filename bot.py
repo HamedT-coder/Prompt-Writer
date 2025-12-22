@@ -84,7 +84,10 @@ def run_bot():
 
     print("🤖 Telegram bot started (Polling)")
     app.run_polling()
-
+#------------------ ERROR HANDLER ---------------
+async def error_handler(update, context):
+    logger.exception("Unhandled error", exc_info=context.error)
+    
 # ================= FAKE SERVER =================
 from http.server import HTTPServer, BaseHTTPRequestHandler
 
@@ -111,6 +114,6 @@ def main():
 
     # 🔒 سرور باید بلاک کنه
     server.serve_forever()
-
+    application.add_error_handler(error_handler)
 if __name__ == "__main__":
     main()
