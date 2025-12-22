@@ -106,6 +106,6 @@ def start_fake_server():
 threading.Thread(target=start_fake_server, daemon=True).start()
 
 def main():
-    application.add_error_handler(error_handler)
+    app.add_error_handler(error_handler)
 if __name__ == "__main__":
     main()
