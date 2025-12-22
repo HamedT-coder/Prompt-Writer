@@ -1,6 +1,4 @@
 import os
-import asyncio
-import requests
 from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import (
@@ -18,7 +16,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
-# ----------------- Handlers -----------------
+
+# ---------------- Handlers ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -27,6 +26,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "موضوع یا ایده‌ت رو بفرست تا برات پرامپت بسازم."
     )
 
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📌 راهنما:\n"
@@ -34,14 +34,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- من برات یک پرامپت حرفه‌ای می‌نویسم"
     )
 
+
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text.strip()
 
     if len(user_text) < 5:
-        await update.message.reply_text("❗️ لطفاً یک توضیح کامل‌تر بفرست.")
+        await update.message.reply_text("❗️ لطفاً توضیح کامل‌تری بفرست.")
         return
 
-    # --- نمونه ساده Prompt Writer (قابل توسعه) ---
     prompt = (
         "You are an expert prompt engineer.\n"
         f"Write a high-quality AI prompt based on the following idea:\n\n"
@@ -55,23 +55,22 @@ async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ----------------- Main -----------------
 
-async def main():
+# ---------------- Main ----------------
+
+def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Commands
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
-
-    # Messages
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt)
     )
 
     print("🤖 Prompt Writer Bot started (Polling)...")
 
-    await application.run_polling()
+    application.run_polling()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
