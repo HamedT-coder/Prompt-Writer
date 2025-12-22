@@ -38,11 +38,29 @@ def start_web_server():
     server.serve_forever()
 
 # ---------- Agenta Call ----------
+# ---------- Agenta Call (with agenta.ConfigManager) ----------
+import os
+import requests
+import agenta as ag
+
+# تنظیم کلید API و میزبان Agenta
+os.environ["AGENTA_API_KEY"] = "AGENTA_API_KEY"  # 🔐 کلید واقعی را اینجا قرار بده
+os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai/api"
+
+# مقداردهی اولیه Agenta و دریافت پیکربندی
+ag.init()
+config = ag.ConfigManager.get_from_registry(
+    app_slug="Prompt-Writer",
+    environment_slug="development"
+)
+
+print("✅ پیکربندی دریافت شد:", config)
+
 def call_agenta(user_idea: str) -> str:
-    url = f"{AGENTA_HOST}/api/chat"
+    url = f"{config.host}/api/chat"  # استفاده از host از config
 
     headers = {
-        "Authorization": f"Bearer {AGENTA_API_KEY}",
+        "Authorization": f"Bearer {config.api_key}",  # استفاده از api_key از config
         "Content-Type": "application/json",
     }
 
@@ -67,12 +85,12 @@ def call_agenta(user_idea: str) -> str:
         response.raise_for_status()
         data = response.json()
 
-        # 🟢 Adjust this if Agenta response structure differs
+        # 🟢 اگر ساختار پاسخ متفاوت بود، این قسمت را تنظیم کن
         return data["choices"][0]["message"]["content"]
 
     except Exception as e:
         return f"❌ خطا در ارتباط با Agenta:\n{str(e)}"
-
+        
 # ---------- Telegram Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
