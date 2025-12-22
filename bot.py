@@ -15,48 +15,33 @@ from telegram.ext import (
 import agenta as ag
 from dotenv import load_dotenv
 
-# ================== ENV ==================
+# ================= ENV =================
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
-PORT = int(os.getenv("PORT", 10000))  # Render PORT
+PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
-    raise RuntimeError("❌ BOT_TOKEN is not set")
+    raise RuntimeError("BOT_TOKEN not set")
 if not AGENTA_API_KEY:
-    raise RuntimeError("❌ AGENTA_API_KEY is not set")
+    raise RuntimeError("AGENTA_API_KEY not set")
 
-# ================== LOG ==================
 logging.basicConfig(level=logging.INFO)
 
-# ================== AGENTA ==================
+# ================= AGENTA =================
 os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
 ag.init()
 
-# ================== FAKE HTTP SERVER ==================
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-def run_fake_server():
-    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
-    logging.info(f"🌐 Fake server running on port {PORT}")
-    server.serve_forever()
-
-# ================== TELEGRAM ==================
+# ================= TELEGRAM =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 سلام!\n"
-        "ایده‌ات رو بفرست تا برات یک پرامپت حرفه‌ای انگلیسی بسازم ✨"
+        "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
     )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    await update.message.reply_text("⏳ در حال ساخت پرامپت...")
+    await update.message.reply_text("⏳ در حال پردازش...")
 
     try:
         result = ag.run(
@@ -66,27 +51,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         output = result.get("output", "❌ خروجی‌ای دریافت نشد")
-
-        await update.message.reply_text("🧠 پرامپت پیشنهادی:\n\n" + output)
+        await update.message.reply_text("🧠 نتیجه:\n\n" + output)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا در ارتباط با Agenta:\n{e}")
+        await update.message.reply_text(f"❌ خطا:\n{e}")
 
-# ================== MAIN ==================
+def run_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    print("🤖 Telegram bot started (Polling)")
+    app.run_polling()
+
+# ================= FAKE SERVER =================
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
 def main():
-    # 🔹 Start fake server in background
-    threading.Thread(target=run_fake_server, daemon=True).start()
+    # ✅ اول پورت رو باز کن (خیلی مهم)
+    server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
+    print(f"🌐 Fake server listening on {PORT}")
 
-    # 🔹 Telegram bot
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    # 🔹 بعد ربات رو تو thread جدا اجرا کن
+    threading.Thread(target=run_bot, daemon=True).start()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
-
-    print("🤖 Prompt Writer Bot started (Polling + Fake Server)...")
-    application.run_polling()
+    # 🔒 سرور باید بلاک کنه
+    server.serve_forever()
 
 if __name__ == "__main__":
     main()
