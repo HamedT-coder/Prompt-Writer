@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-os.environ["AGENTA_API_KEY"] = os.getenv("AGENTA_API_KEY")
 PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
@@ -30,6 +29,7 @@ if not AGENTA_API_KEY:
 logging.basicConfig(level=logging.INFO)
 
 # ================= AGENTA =================
+os.environ["AGENTA_API_KEY"] = os.getenv("AGENTA_API_KEY")
 ag.init()
 
 def call_agenta(user_idea: str) -> str:
