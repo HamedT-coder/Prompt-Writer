@@ -16,8 +16,8 @@ load_dotenv()
 
 # ---------- ENV ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-AGENTA_API_KEY = os.environ["AGENTA_API_KEY"]
-AGENTA_HOST = os.environ["AGENTA_HOST"]
+AGENTA_API_KEY = os.getenv["AGENTA_API_KEY"]
+AGENTA_HOST = os.getenv["AGENTA_HOST"]
 PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
