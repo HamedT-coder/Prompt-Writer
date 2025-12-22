@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
+os.environ["AGENTA_API_KEY"] = os.getenv("AGENTA_API_KEY")
 PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
@@ -30,8 +30,19 @@ if not AGENTA_API_KEY:
 logging.basicConfig(level=logging.INFO)
 
 # ================= AGENTA =================
-os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
 ag.init()
+
+def call_agenta(user_idea: str) -> str:
+    result = ag.run(
+        app_slug="Prompt-Writer",
+        environment_slug="development",
+        inputs={
+            "user_idea": user_idea
+        },
+    )
+
+    return result.get("output", "❌ خروجی‌ای از Agenta دریافت نشد")
+
 
 # ================= TELEGRAM =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
