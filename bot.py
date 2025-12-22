@@ -1,5 +1,6 @@
 import os
 import threading
+import requests
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from dotenv import load_dotenv
 from telegram import Update
@@ -13,14 +14,19 @@ from telegram.ext import (
 
 load_dotenv()
 
+# ---------- ENV ----------
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
+AGENTA_HOST = os.getenv("AGENTA_HOST")  # example: https://your-agenta-host
 PORT = int(os.getenv("PORT", 10000))
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is not set")
 
+if not AGENTA_API_KEY or not AGENTA_HOST:
+    raise RuntimeError("AGENTA_HOST or AGENTA_API_KEY is not set")
 
-# ---------- Dummy Web Server ----------
+# ---------- Dummy Web Server (Render) ----------
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -31,40 +37,79 @@ def start_web_server():
     server = HTTPServer(("0.0.0.0", PORT), HealthHandler)
     server.serve_forever()
 
+# ---------- Agenta Call ----------
+def call_agenta(user_idea: str) -> str:
+    url = f"{AGENTA_HOST}/api/chat"
+
+    headers = {
+        "Authorization": f"Bearer {AGENTA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are an expert prompt engineer. "
+                    "Your task is to write a high-quality, detailed, and professional AI prompt."
+                ),
+            },
+            {
+                "role": "user",
+                "content": user_idea,
+            },
+        ]
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=payload, timeout=30)
+        response.raise_for_status()
+        data = response.json()
+
+        # 🟢 Adjust this if Agenta response structure differs
+        return data["choices"][0]["message"]["content"]
+
+    except Exception as e:
+        return f"❌ خطا در ارتباط با Agenta:\n{str(e)}"
 
 # ---------- Telegram Handlers ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✍️ سلام!\n"
-        "من ربات Prompt Writer هستم.\n"
-        "ایده‌تو بفرست تا پرامپت بسازم."
+        "ایده یا توضیح کارت رو بفرست تا با Agenta برات پرامپت حرفه‌ای بسازم."
     )
 
 async def handle_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
+    user_text = update.message.text.strip()
 
-    prompt = (
-        "You are an expert prompt engineer.\n"
-        f"Create a professional AI prompt for this idea:\n{text}"
-    )
+    if len(user_text) < 5:
+        await update.message.reply_text("❗️ لطفاً توضیح کامل‌تری بفرست.")
+        return
+
+    await update.message.reply_text("⏳ در حال ساخت پرامپت...")
+
+    result = call_agenta(user_text)
 
     await update.message.reply_text(
-        f"🧠 پرامپت:\n```{prompt}```",
+        f"🧠 پرامپت نهایی:\n\n```{result}```",
         parse_mode="Markdown"
     )
 
-
+# ---------- Main ----------
 def main():
-    # Start fake web server
+    # Start dummy web server
     threading.Thread(target=start_web_server, daemon=True).start()
 
     app = Application.builder().token(BOT_TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt))
+    app.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_prompt)
+    )
 
-    print("🤖 Bot running with polling + web port")
+    print("🤖 Prompt Writer Bot running (Polling + Agenta)")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()
