@@ -33,19 +33,25 @@ logging.basicConfig(level=logging.INFO)
 os.environ["AGENTA_API_KEY"] = os.getenv("AGENTA_API_KEY")
 ag.init()
 
+# --------- AGENTA INIT ---------
+os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
+ag.init()
+
+# --------- AGENTA CALL ---------
 def call_agenta(user_idea: str) -> str:
-    result = ag.run(
-        app_slug="Prompt-Writer",
-        environment_slug="development",
-        inputs={
-            "user_idea": user_idea
-        },
-    )
+    try:
+        result = ag.run(
+            app_slug="Prompt-Writer",
+            environment_slug="development",
+            inputs={
+                "user_idea": user_idea
+            },
+        )
+        return result.get("output", "❌ خروجی‌ای دریافت نشد")
+    except Exception as e:
+        return f"❌ خطا در Agenta:\n{e}"
 
-    return result.get("output", "❌ خروجی‌ای از Agenta دریافت نشد")
-
-
-# ================= TELEGRAM =================
+# --------- HANDLERS ---------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
@@ -53,7 +59,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    await update.message.reply_text("⏳ در حال پردازش...")
+
+    await update.message.reply_text("⏳ در حال ساخت پرامپت...")
+
+    result = call_agenta(user_text)
+
+    await update.message.reply_text(result)
 
     try:
         result = ag.run(
