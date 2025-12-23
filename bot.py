@@ -101,7 +101,20 @@ def run_bot():
 #------------------ ERROR HANDLER ---------------
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error) 
-    
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+
+def start_fake_server():
+    port = int(os.environ.get("PORT", 10000))
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
+
+threading.Thread(target=start_fake_server, daemon=True).start
+()
+
 def main():
     logger.info("📌 Entered main()")
     logger.info("🚀 Bot is starting polling...")
