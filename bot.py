@@ -37,23 +37,14 @@ if not AGENTA_API_KEY:
 logging.basicConfig(level=logging.INFO)
 
 # ================= AGENTA =================
-os.environ["AGENTA_API_KEY"] = os.getenv("AGENTA_API_KEY")
+import agenta as ag
 
 ag.init()
 
-def call_agenta(user_idea: str) -> str:
-    logger.info("Sending request to Agenta")
-    result = run_app(
-        app_slug="Prompt-Writer",
-        environment_slug="development",
-        inputs={
-            "user_idea": user_idea
-        },
-    )
-
-    logger.info("Agenta response received")
-    logger.info("Agenta result object: %s", result)
-    return result.get("output", "❌ خروجی‌ای از Agenta دریافت نشد")
+config = ag.ConfigManager.get_from_registry(
+    app_slug="Prompt-Writer",
+    environment_slug="development",
+)
 
 # ================= TELEGRAM =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -64,21 +55,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    logger.info("User message received: %s", update.message.text)
-    await update.message.reply_text("⏳ در حال پردازش...")
+    logger.info("📩 User message received: %s", user_text)
+
+    await update.message.reply_text("⏳ در حال ساخت پرامپت...")
 
     try:
-        result = ag.run(
+        # گرفتن کانفیگ از Agenta
+        config = ag.ConfigManager.get_from_registry(
             app_slug="Prompt-Writer",
             environment_slug="development",
-            inputs={"user_idea": user_text},
         )
 
-        output = result.get("output", "❌ خروجی‌ای دریافت نشد")
-        await update.message.reply_text("🧠 نتیجه:\n\n" + output)
+        logger.info("✅ Agenta config loaded successfully")
+
+        # فرض: داخل Agenta یک فیلد prompt داری
+        prompt_template = config.get("prompt")
+
+        if not prompt_template:
+            raise ValueError("❌ prompt template در Agenta پیدا نشد")
+
+        # جایگذاری ورودی کاربر
+        final_prompt = prompt_template.replace(
+            "{{user_idea}}",
+            user_text
+        )
+
+        logger.info("🧠 Prompt generated successfully")
+
+        await update.message.reply_text(
+            "🧠 پرامپت آماده:\n\n" + final_prompt
+        )
 
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا:\n{e}")
+        logger.exception("❌ Error while generating prompt")
+        await update.message.reply_text(
+            "❌ خطا در ساخت پرامپت:\n" + str(e)
+        )
+
 
 def run_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
