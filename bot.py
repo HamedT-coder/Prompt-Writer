@@ -82,11 +82,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def run_bot():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🤖 Telegram bot started (Polling)")
-    app.run_polling()
+    application.run_polling()
 #------------------ ERROR HANDLER ---------------
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error) 
