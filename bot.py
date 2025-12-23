@@ -1,7 +1,5 @@
 import os
 import logging
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 from string import Template
 from telegram import Update
 from telegram.ext import (
@@ -44,6 +42,10 @@ config = ag.ConfigManager.get_from_registry(
     environment_slug="development",
 )
 
+#------------------ ERROR HANDLER ---------------
+async def error_handler(update, context):
+    logger.exception("Unhandled error", exc_info=context.error)
+    
 # ================= TELEGRAM =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -88,17 +90,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # فرض: داخل Agenta یک فیلد prompt داری
     
-        prompt_template = config.get("prompt")
-        if not isinstance(prompt_template, str):
-            raise ValueError("❌ قالب پرامپت معتبر نیست")
-        if not prompt_template:
-            raise ValueError("❌ prompt template در Agenta پیدا نشد")
-
-        # جایگذاری ورودی کاربر
-        prompt_template = config.get("prompt")
+        prompt_template = config.parameters.get("prompt")
         template_text = extract_prompt_text(prompt_template)
         final_prompt = template_text.replace("{{user_idea}}", user_text)
-        logger.info("🧠 Prompt generated successfully")
+        logger.info("Agenta config raw: %s", config)
 
         await update.message.reply_text(
             "🧠 پرامپت آماده:\n\n" + final_prompt
@@ -109,40 +104,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ خطا در ساخت پرامپت:\n" + str(e)
         )
-application = Application.builder().token(BOT_TOKEN).build()
-
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-application.add_error_handler(error_handler)
-application.run_polling()
-#------------------ ERROR HANDLER ---------------
-async def error_handler(update, context):
-    logger.exception("Unhandled error", exc_info=context.error) 
 
 # تعریف logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
 
-# هندلر HTTP برای بررسی سلامت
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-# سرور سلامت
-def start_fake_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    server.serve_forever()
-
-# اجرای سرور در ترد جداگانه
-threading.Thread(target=start_fake_server, daemon=True).start()
-
-# تابع اصلی
 def main():
     logger.info("📌 Entered main()")
     logger.info("🚀 Bot is starting polling...")
+
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+    application.add_error_handler(error_handler)
+
+    application.run_polling()
     
 if __name__ == "__main__":
     main()
