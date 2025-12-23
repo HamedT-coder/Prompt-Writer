@@ -87,7 +87,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info("✅ Agenta config loaded successfully")
 
         # فرض: داخل Agenta یک فیلد prompt داری
-        prompt_template = config.get("prompt")
+    
         prompt_template = config.get("prompt")
         if not isinstance(prompt_template, str):
             raise ValueError("❌ قالب پرامپت معتبر نیست")
@@ -109,14 +109,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "❌ خطا در ساخت پرامپت:\n" + str(e)
         )
-
-
-def run_bot():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    print("🤖 Telegram bot started (Polling)")
 #------------------ ERROR HANDLER ---------------
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error) 
@@ -152,6 +144,6 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_error_handler(error_handler)
     application.run_polling()
-
+    print("🤖 Telegram bot started (Polling)")
 if __name__ == "__main__":
     main()
