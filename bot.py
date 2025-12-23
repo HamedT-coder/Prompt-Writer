@@ -12,7 +12,7 @@ from telegram.ext import (
     filters, Application
 )
 
-from agenta import run_app
+import agenta as ag
 from dotenv import load_dotenv
 
 logging.basicConfig(
@@ -37,8 +37,6 @@ if not AGENTA_API_KEY:
 logging.basicConfig(level=logging.INFO)
 
 # ================= AGENTA =================
-import agenta as ag
-
 ag.init()
 
 config = ag.ConfigManager.get_from_registry(
