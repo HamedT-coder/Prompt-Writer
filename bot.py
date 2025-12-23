@@ -51,6 +51,9 @@ async def error_handler(update, context):
 def start_bot():
     logger.info("🤖 Telegram bot started (Polling)")
 
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(
