@@ -90,14 +90,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # فرض: داخل Agenta یک فیلد prompt داری
     
-        prompt_template = config.parameters.get("prompt")
+        # گرفتن prompt از config
+        prompt_template = config.get("prompt")
+
+        if not prompt_template:
+            raise ValueError("❌ کلید 'prompt' در Agenta config پیدا نشد")
+
         template_text = extract_prompt_text(prompt_template)
         final_prompt = template_text.replace("{{user_idea}}", user_text)
-        logger.info("Agenta config raw: %s", config)
+
+        logger.info("🧠 Prompt generated successfully")
 
         await update.message.reply_text(
             "🧠 پرامپت آماده:\n\n" + final_prompt
         )
+
 
     except Exception as e:
         logger.exception("❌ Error while generating prompt")
