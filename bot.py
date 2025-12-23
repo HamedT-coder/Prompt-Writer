@@ -46,6 +46,24 @@ config = ag.ConfigManager.get_from_registry(
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error)
     
+def start_bot():
+    logger.info("🤖 Telegram bot started (Polling)")
+
+    application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+    application.add_error_handler(error_handler)
+
+    application.run_polling()
+    
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"OK")
+        
 # ================= TELEGRAM =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -118,17 +136,16 @@ logging.basicConfig(level=logging.INFO)
 
 def main():
     logger.info("📌 Entered main()")
-    logger.info("🚀 Bot is starting polling...")
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # اجرای bot در ترد جدا
+    threading.Thread(target=start_bot, daemon=True).start()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
-    application.add_error_handler(error_handler)
+    # اجرای سرور HTTP در ترد اصلی
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"🌐 Fake server listening on port {port}")
 
-    application.run_polling()
+    server = HTTPServer(("0.0.0.0", port), HealthHandler)
+    server.serve_forever()
     
 if __name__ == "__main__":
     main()
