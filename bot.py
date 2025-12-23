@@ -52,7 +52,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info("/start received")
     if not update.message or not update.message.text:
         return
-    
+def extract_prompt_text(prompt_template):
+    if isinstance(prompt_template, str):
+        return prompt_template
+
+    elif isinstance(prompt_template, dict):
+        # اولویت با کلیدهای رایج
+        for key in ["text", "template", "fa", "en", "body", "content"]:
+            value = prompt_template.get(key)
+            if isinstance(value, str):
+                return value
+            elif isinstance(value, dict):
+                # بررسی لایه دوم
+                for subkey in ["fa", "en", "text"]:
+                    subvalue = value.get(subkey)
+                    if isinstance(subvalue, str):
+                        return subvalue
+
+    raise ValueError("قالب پرامپت قابل تبدیل به متن نیست.")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
@@ -77,8 +95,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError("❌ prompt template در Agenta پیدا نشد")
 
         # جایگذاری ورودی کاربر
-        final_prompt = Template(prompt_template).safe_substitute(user_idea=user_text)
-
+        prompt_template = config.get("prompt")
+        template_text = extract_prompt_text(prompt_template)
+        final_prompt = template_text.replace("{{user_idea}}", user_text)
         logger.info("🧠 Prompt generated successfully")
 
         await update.message.reply_text(
