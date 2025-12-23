@@ -117,7 +117,6 @@ def run_bot():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     print("🤖 Telegram bot started (Polling)")
-    application.run_polling()
 #------------------ ERROR HANDLER ---------------
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error) 
