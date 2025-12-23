@@ -12,7 +12,7 @@ from telegram.ext import (
     filters, Application
 )
 
-import agenta as ag
+from agenta import run_app
 from dotenv import load_dotenv
 
 logging.basicConfig(
@@ -43,14 +43,16 @@ ag.init()
 
 def call_agenta(user_idea: str) -> str:
     logger.info("Sending request to Agenta")
-    result = ag.run(
+    result = run_app(
         app_slug="Prompt-Writer",
         environment_slug="development",
         inputs={
             "user_idea": user_idea
         },
     )
+
     logger.info("Agenta response received")
+    logger.info("Agenta result object: %s", result)
     return result.get("output", "❌ خروجی‌ای از Agenta دریافت نشد")
 
 # ================= TELEGRAM =================
