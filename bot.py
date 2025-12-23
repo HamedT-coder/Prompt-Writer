@@ -2,7 +2,7 @@ import os
 import logging
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-
+from string import Template
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -50,7 +50,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
     )
     logger.info("/start received")
-
+    if not update.message or not update.message.text:
+    return
+    
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
@@ -68,15 +70,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # فرض: داخل Agenta یک فیلد prompt داری
         prompt_template = config.get("prompt")
-
+        prompt_template = config.get("prompt")
+        if not isinstance(prompt_template, str):
+            raise ValueError("❌ قالب پرامپت معتبر نیست")
         if not prompt_template:
             raise ValueError("❌ prompt template در Agenta پیدا نشد")
 
         # جایگذاری ورودی کاربر
-        final_prompt = prompt_template.replace(
-            "{{user_idea}}",
-            user_text
-        )
+        final_prompt = Template(prompt_template).safe_substitute(user_idea=user_text)
 
         logger.info("🧠 Prompt generated successfully")
 
