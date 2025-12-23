@@ -20,6 +20,7 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
+logger.info("📌 bot.py loaded successfully")
 
 # ================= ENV =================
 load_dotenv()
@@ -86,26 +87,22 @@ def run_bot():
     app.run_polling()
 #------------------ ERROR HANDLER ---------------
 async def error_handler(update, context):
-    logger.exception("Unhandled error", exc_info=context.error)
+    logger.exception("Unhandled error", exc_info=context.error) 
     
-# ================= FAKE SERVER =================
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-def start_fake_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    server.serve_forever()
-
-threading.Thread(target=start_fake_server, daemon=True).start()
-
 def main():
-    app.add_error_handler(error_handler)
+    logger.info("📌 Entered main()")
+    logger.info("🚀 Bot is starting polling...")
+
+    application = Application.builder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+
+    application.add_error_handler(error_handler)
+
+    application.run_polling()
+
 if __name__ == "__main__":
     main()
