@@ -102,19 +102,27 @@ def run_bot():
 async def error_handler(update, context):
     logger.exception("Unhandled error", exc_info=context.error) 
 
+# تعریف logger
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.INFO)
+
+# هندلر HTTP برای بررسی سلامت
+class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
 
+# سرور سلامت
 def start_fake_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
     server.serve_forever()
 
-threading.Thread(target=start_fake_server, daemon=True).start
-()
+# اجرای سرور در ترد جداگانه
+threading.Thread(target=start_fake_server, daemon=True).start()
 
+# تابع اصلی
 def main():
     logger.info("📌 Entered main()")
     logger.info("🚀 Bot is starting polling...")
@@ -122,9 +130,7 @@ def main():
     application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_error_handler(error_handler)
     application.run_polling()
 
