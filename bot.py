@@ -54,13 +54,6 @@ def start_bot():
 
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-    )
-    application.add_error_handler(error_handler)
     
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -148,6 +141,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # تعریف logger
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO)
+
+application = Application.builder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+    application.add_error_handler(error_handler)
 
 def main():
     logger.info("📌 Entered main()")
