@@ -2,6 +2,8 @@ import os
 import logging
 from string import Template
 from telegram import Update
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
