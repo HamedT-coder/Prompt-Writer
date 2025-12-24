@@ -33,15 +33,17 @@ if not AGENTA_API_KEY:
 
 # ================= Agenta Init =================
 try:
-    # این دستور کلاینت سراسری (ag.client) را آماده می‌کند
     ag.init()
+    logger.info("✅ Agenta initialized.")
     
-    # دیباگ: برای اطمینان چک می‌کنیم که کلاینت سراسری وجود دارد
+    # --- بخش دیباگ: چاپ لیست متدها ---
     if hasattr(ag, 'client'):
-        logger.info("✅ Agenta Global Client detected successfully.")
+        logger.info(f"🔍 Client Type: {type(ag.client)}")
+        # چاپ تمام متدهای عمومی (که با _ شروع نشده‌اند)
+        methods = [m for m in dir(ag.client) if not m.startswith('_')]
+        logger.info(f"🔍 Available Client Methods: {methods}")
     else:
-        logger.warning("⚠️ Agenta Global client not found.")
-        
+        logger.error("❌ ag.client not found!")
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
@@ -63,65 +65,12 @@ def start_fake_server():
 
 # ================= هندلرهای تلگرام =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 سلام!\nایده‌ات رو بفرست تا برات پردازش کنم."
-    )
+    await update.message.reply_text("ربات آماده است.")
     logger.info("/start received")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    logger.info("📩 User message received: %s", user_text)
-
-    status_message = await update.message.reply_text("⏳ در حال پردازش...")
-
-    try:
-        # 1. دریافت کانفیگ برای پیدا کردن نام متغیر (input_key)
-        config = await asyncio.to_thread(
-            ag.ConfigManager.get_from_registry,
-            app_slug="Prompt-Writer",
-            environment_slug="development"
-        )
-        
-        llm_config = config.get("llm_config", {})
-        input_keys = llm_config.get("input_keys", [])
-        target_key = input_keys[0] if input_keys else "user_idea"
-        
-        logger.info(f"🔍 Target Key: {target_key}")
-
-        # 2. اجرای درخواست با استفاده از کلاینت سراسری ag.client
-        # این روش احتمالا متد run دارد و آدرس را خودش مدیریت می‌کند
-        
-        # ساخت پارامترها بر اساس متد معمول
-        run_params = {
-            "app_slug": "Prompt-Writer",
-            "environment_slug": "development",
-            "inputs": {
-                target_key: user_text
-            }
-        }
-
-        logger.info(f"📤 Triggering run via ag.client...")
-
-        # اجرا در ترد جداگانه
-        result = await asyncio.to_thread(
-            ag.client.run, # فراخوانی متد run از کلاینت سراسری
-            **run_params
-        )
-
-        logger.info("✅ Run executed successfully")
-
-        # 3. نمایش نتیجه
-        final_output = str(result)
-        
-        await status_message.edit_text(f"🤖 پاسخ:\n\n{final_output}")
-
-    except Exception as e:
-        logger.exception("❌ Error in run process")
-        # اگر خطا مربوط به نام متد بود، به کاربر پیشنهاد دیباگ می‌دهیم
-        await status_message.edit_text(
-            f"❌ خطا:\n{str(e)}\n\n"
-            "(اگر خطا مربوط به متد run بود، لطفا در کنسول لاگ را بفرستید)"
-        )
+    # فعلا کاری نکن، فقط بگو متوجه شدیم
+    await update.message.reply_text("در حال دریافت اطلاعات از کلاینت...")
 
 def main():
     logger.info("📌 Entered main()")
