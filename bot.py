@@ -11,18 +11,16 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import re # ایمپورت عبارات باقاعده برای جایگزینی هوشمند
-import agenta as ag
+import agenta as ag  # استفاده از کلاینت خود Agenta
 from dotenv import load_dotenv
 
-# ================= تنظیمات لاگر =================
+# ================= تنظیمات =================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
 
-# ================= ENV =================
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -33,22 +31,20 @@ if not BOT_TOKEN:
 if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
 
-# ================= AGENTA =================
-# فقط اینیت می‌کنیم، کانفیگ را الان نمی‌گیریم تا برنامه فریز نشود
+# ================= کلاینت Agenta =================
+# ایجاد کلاینت برای اجرای اپلیکیشن‌ها
+client = ag.Client(api_key=AGENTA_API_KEY)
+
 try:
     ag.init()
     logger.info("Agenta initialized.")
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
-#------------------ ERROR HANDLER ---------------
-async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.exception("Unhandled error", exc_info=context.error)
-
-# ================= سرور سلامت (برای Render/Heroku) =================
+# ================= سرور سلامت =================
 class HealthHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        pass # جلوگیری از لاگ‌های مزاحم HTTP
+        pass 
 
     def do_GET(self):
         self.send_response(200)
@@ -61,87 +57,72 @@ def start_fake_server():
     logger.info(f"🌐 Fake server listening on port {port}")
     server.serve_forever()
 
-# ------------------ UPDATED EXTRACT FUNCTION ---------------
-def extract_prompt_text(prompt_template):
-    # اگر داده رشته ساده باشد
-    if isinstance(prompt_template, str):
-        return prompt_template
-
-    # اگر داده دیکشنری باشد (حالت جدید Agenta)
-    if isinstance(prompt_template, dict):
-        # حالت 1: ساختار پیام‌های چت (ChatML)
-        if 'messages' in prompt_template:
-            parts = []
-            for msg in prompt_template['messages']:
-                if isinstance(msg, dict) and 'content' in msg:
-                    # اضافه کردن نقش (System/User) برای خوانایی بهتر
-                    role = msg.get('role', 'unknown').capitalize()
-                    content = msg['content']
-                    parts.append(f"[{role}]: {content}")
-            return "\n\n".join(parts)
-        
-        # حالت 2: جستجوی کلیدهای متنی عادی
-        for key in ["text", "template", "fa", "en", "body", "content", "prompt"]:
-            value = prompt_template.get(key)
-            if isinstance(value, str):
-                return value
-
-    raise ValueError(f"قالب پرامپت قابل تبدیل به متن نیست. ساختار: {prompt_template}")
-
-# ================= TELEGRAM HANDLERS =================
+# ================= هندلرهای تلگرام =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
+        "🤖 سلام!\nایده‌ات رو بفرست تا برات پردازش کنم."
     )
     logger.info("/start received")
 
-# ------------------ UPDATED HANDLER ---------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
 
-    status_message = await update.message.reply_text("⏳ در حال ساخت پرامپت...")
+    status_message = await update.message.reply_text("⏳ در حال پردازش با Agenta...")
 
     try:
-        # دریافت کانفیگ در ترد جداگانه
+        # 1. دریافت اطلاعات کانفیگ (برای فهمیدن اینکه ورودی برنامه چیست)
+        # این فقط اطلاعات ساختاری را می‌خواند، اجرا نمی‌کند
         config = await asyncio.to_thread(
             lambda: ag.ConfigManager.get_from_registry(
                 app_slug="Prompt-Writer",
                 environment_slug="development",
             )
         )
-        logger.info("✅ Agenta config loaded")
+        logger.info("✅ Agenta config loaded for input detection")
 
-        # دریافت تمپلیت
-        prompt_template = config.get("prompt")
-        if not prompt_template:
-            raise ValueError("❌ کلید 'prompt' در Agenta پیدا نشد")
+        # 2. پیدا کردن کلیدهای ورودی (Input Keys)
+        # مثلا در لاگ قبلی دیدیم که 'country' بود. ممکنه 'user_idea' یا چیز دیگه ای باشه.
+        llm_config = config.get("llm_config", {})
+        input_keys = llm_config.get("input_keys", [])
+        
+        # اگر کلیدی مشخص نشده بود، از یک نام پیش‌فرض استفاده می‌کنیم
+        target_key = input_keys[0] if input_keys else "user_idea"
+        
+        logger.info(f"🔍 Detected input key: {target_key}")
 
-        # تبدیل به متن
-        template_text = extract_prompt_text(prompt_template)
+        # 3. آماده سازی داده ورودی برای Agenta
+        # ما متن تلگرام را به کلید پیدا شده نسبت می‌دهیم
+        # مثلا: {"country": "تصویر یک ماشین"}
+        payload = {target_key: user_text}
 
-        # جایگزینی هوشمند با Regex:
-        # این خط هر چیزی که داخل {{ }} باشد را با متن کاربر جایگزین می‌کند.
-        # بنابراین فرقی نمی‌کند نام متغیر شما {{country}} باشد یا {{user_idea}}
-        final_prompt = re.sub(r'\{\{.*?\}\}', user_text, template_text)
-
-        logger.info("🧠 Final prompt generated")
-
-        await status_message.edit_text(
-            "🧠 پرامپت آماده:\n\n" + final_prompt
+        # 4. اجرای اپلیکیشن روی سرور Agenta
+        # نکته: client.run متد همگام (Sync) است، پس باید در ترد جداگانه اجرا شود
+        logger.info("📤 Triggering Agenta Run...")
+        result = await asyncio.to_thread(
+            client.run,
+            app_slug="Prompt-Writer",
+            environment_slug="development",
+            input_data=payload
         )
+
+        logger.info("✅ Agenta Run completed")
+
+        # 5. نمایش نتیجه به کاربر
+        # Agenta معمولاً رشته نهایی را برمی‌گرداند، اگر دیکشنری بود، متن آن را می‌گیریم
+        final_output = str(result) if not isinstance(result, str) else result
+
+        await status_message.edit_text(f"🤖 پاسخ سیستم:\n\n{final_output}")
 
     except Exception as e:
-        logger.exception("❌ Error while generating prompt")
+        logger.exception("❌ Error in Agenta execution")
         await status_message.edit_text(
-            "❌ خطا در ساخت پرامپت:\n" + str(e)
+            f"❌ خطا در ارتباط با Agenta:\n{str(e)}"
         )
 
-# ================= MAIN =================
 def main():
     logger.info("📌 Entered main()")
 
-    # 🔹 Fake server در Thread (برای زنده نگه داشتن اپلیکیشن)
     threading.Thread(
         target=start_fake_server,
         daemon=True
@@ -149,18 +130,14 @@ def main():
 
     logger.info("🌐 Fake server started")
 
-    # 🔹 ساخت اپلیکیشن تلگرام
     application = ApplicationBuilder().token(BOT_TOKEN).build()
     
-    # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
-    application.add_error_handler(error_handler)
 
-    # 🔹 اجرای ربات
-    logger.info("🤖 Telegram bot started (Polling)")
+    logger.info("🤖 Telegram bot started")
     application.run_polling()
 
 if __name__ == "__main__":
