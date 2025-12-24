@@ -14,7 +14,7 @@ from telegram.ext import (
 import agenta as ag
 # اصلاح ایمپورت کلاینت:
 # به جای استفاده از ag.Client (که وجود ندارد)، آن را از زیرپوشه client وارد می‌کنیم
-from agenta.client import Client 
+from agenta.client import client 
 from dotenv import load_dotenv
 
 # ================= تنظیمات =================
