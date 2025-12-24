@@ -11,7 +11,7 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-
+import re # ایمپورت عبارات باقاعده برای جایگزینی هوشمند
 import agenta as ag
 from dotenv import load_dotenv
 
@@ -61,45 +61,30 @@ def start_fake_server():
     logger.info(f"🌐 Fake server listening on port {port}")
     server.serve_forever()
 
+# ------------------ UPDATED EXTRACT FUNCTION ---------------
 def extract_prompt_text(prompt_template):
-    # --- بخش دیباگ (برای فهمیدن مشکل) ---
-    logger.info(f"DEBUG - نوع داده دریافتی: {type(prompt_template)}")
-    logger.info(f"DEBUG - محتوا: {prompt_template}")
-    # ----------------------------------------
-
-    # اگر رشته ساده بود، همان را برگردان
+    # اگر داده رشته ساده باشد
     if isinstance(prompt_template, str):
         return prompt_template
 
-    # اگر دیکشنری بود
+    # اگر داده دیکشنری باشد (حالت جدید Agenta)
     if isinstance(prompt_template, dict):
-        # اولویت با کلیدهای مشخص
-        priority_keys = ["text", "template", "fa", "en", "body", "content", "prompt", "system", "user"]
-        for key in priority_keys:
+        # حالت 1: ساختار پیام‌های چت (ChatML)
+        if 'messages' in prompt_template:
+            parts = []
+            for msg in prompt_template['messages']:
+                if isinstance(msg, dict) and 'content' in msg:
+                    # اضافه کردن نقش (System/User) برای خوانایی بهتر
+                    role = msg.get('role', 'unknown').capitalize()
+                    content = msg['content']
+                    parts.append(f"[{role}]: {content}")
+            return "\n\n".join(parts)
+        
+        # حالت 2: جستجوی کلیدهای متنی عادی
+        for key in ["text", "template", "fa", "en", "body", "content", "prompt"]:
             value = prompt_template.get(key)
             if isinstance(value, str):
                 return value
-            elif isinstance(value, dict):
-                # بررسی لایه دوم
-                for subkey in ["fa", "en", "text", "content"]:
-                    subvalue = value.get(subkey)
-                    if isinstance(subvalue, str):
-                        return subvalue
-
-        # اگر کلیدهای بالا پیدا نشد، **تمام مقادیر** را نگاه کن
-        logger.warning("🔍 کلیدهای استاندارد پیدا نشد، جستجوی کلی...")
-        for key, value in prompt_template.items():
-            if isinstance(value, str) and len(value) > 10: # فرض بر این است که متن طولانی‌تر از ۱۰ کاراکتر است
-                logger.info(f"✅ متن کلید '{key}' انتخاب شد.")
-                return value
-
-    # اگر لیست بود (مثلاً مکالمه چت)
-    if isinstance(prompt_template, list):
-        # تلاش برای تبدیل لیست به متن
-        try:
-            return " ".join(str(i) for i in prompt_template)
-        except:
-            pass
 
     raise ValueError(f"قالب پرامپت قابل تبدیل به متن نیست. ساختار: {prompt_template}")
 
@@ -110,6 +95,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     logger.info("/start received")
 
+# ------------------ UPDATED HANDLER ---------------
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
@@ -117,32 +103,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_message = await update.message.reply_text("⏳ در حال ساخت پرامپت...")
 
     try:
-        # استفاده از ترد جداگانه برای جلوگیری از قفل شدن
+        # دریافت کانفیگ در ترد جداگانه
         config = await asyncio.to_thread(
             lambda: ag.ConfigManager.get_from_registry(
                 app_slug="Prompt-Writer",
                 environment_slug="development",
             )
         )
+        logger.info("✅ Agenta config loaded")
 
-        logger.info("✅ Agenta config loaded successfully")
-
-        # گرفتن prompt از config
+        # دریافت تمپلیت
         prompt_template = config.get("prompt")
-
         if not prompt_template:
-            raise ValueError("❌ کلید 'prompt' در Agenta config پیدا نشد")
+            raise ValueError("❌ کلید 'prompt' در Agenta پیدا نشد")
 
-        # استفاده از تابع اصلاح شده
+        # تبدیل به متن
         template_text = extract_prompt_text(prompt_template)
-        
-        # جایگذاری متن کاربر
-        if "{{user_idea}}" in template_text:
-            final_prompt = template_text.replace("{{user_idea}}", user_text)
-        else:
-            final_prompt = f"{template_text}\n\nUser Idea: {user_text}"
 
-        logger.info("🧠 Prompt generated successfully")
+        # جایگزینی هوشمند با Regex:
+        # این خط هر چیزی که داخل {{ }} باشد را با متن کاربر جایگزین می‌کند.
+        # بنابراین فرقی نمی‌کند نام متغیر شما {{country}} باشد یا {{user_idea}}
+        final_prompt = re.sub(r'\{\{.*?\}\}', user_text, template_text)
+
+        logger.info("🧠 Final prompt generated")
 
         await status_message.edit_text(
             "🧠 پرامپت آماده:\n\n" + final_prompt
