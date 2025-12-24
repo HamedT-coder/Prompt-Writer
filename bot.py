@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-from string import Template
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -10,18 +9,18 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters, Application
+    filters
 )
 
 import agenta as ag
 from dotenv import load_dotenv
 
+# ================= تنظیمات لاگر =================
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
 )
 logger = logging.getLogger(__name__)
-logger.info("📌 bot.py loaded successfully")
 
 # ================= ENV =================
 load_dotenv()
@@ -29,69 +28,49 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
-
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
 
-logging.basicConfig(level=logging.INFO)
-
 # ================= AGENTA =================
-ag.init()
-
-config = ag.ConfigManager.get_from_registry(
-    app_slug="Prompt-Writer",
-    environment_slug="development",
-)
+# فقط اینیت می‌کنیم، کانفیگ را الان نمی‌گیریم تا برنامه فریز نشود
+try:
+    ag.init()
+    logger.info("Agenta initialized.")
+except Exception as e:
+    logger.error(f"Agenta init failed: {e}")
 
 #------------------ ERROR HANDLER ---------------
-async def error_handler(update, context):
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception("Unhandled error", exc_info=context.error)
-    
-def start_bot():
-    logger.info("🤖 Telegram bot started (Polling)")
 
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
+# ================= سرور سلامت (برای Render/Heroku) =================
 class HealthHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass # جلوگیری از لاگ‌های مزاحم HTTP
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"OK")
 
-    def do_HEAD(self):
-        self.send_response(200)
-        self.end_headers()
-        
 def start_fake_server():
     port = int(os.environ.get("PORT", 10000))
     server = HTTPServer(("0.0.0.0", port), HealthHandler)
     logger.info(f"🌐 Fake server listening on port {port}")
-    server.serve_forever(
+    server.serve_forever()
 
-    )        
-# ================= TELEGRAM =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
-    )
-    logger.info("/start received")
-    if not update.message or not update.message.text:
-        return
 def extract_prompt_text(prompt_template):
     if isinstance(prompt_template, str):
         return prompt_template
 
     elif isinstance(prompt_template, dict):
-        # اولویت با کلیدهای رایج
         for key in ["text", "template", "fa", "en", "body", "content"]:
             value = prompt_template.get(key)
             if isinstance(value, str):
                 return value
             elif isinstance(value, dict):
-                # بررسی لایه دوم
                 for subkey in ["fa", "en", "text"]:
                     subvalue = value.get(subkey)
                     if isinstance(subvalue, str):
@@ -99,23 +78,32 @@ def extract_prompt_text(prompt_template):
 
     raise ValueError("قالب پرامپت قابل تبدیل به متن نیست.")
 
+# ================= TELEGRAM HANDLERS =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🤖 سلام!\nایده‌ات رو بفرست تا برات پرامپت حرفه‌ای بسازم."
+    )
+    logger.info("/start received")
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
 
-    await update.message.reply_text("⏳ در حال ساخت پرامپت...")
+    # ارسال پیام فوری (چون Agenta ممکن است طول بکشد)
+    status_message = await update.message.reply_text("⏳ در حال ساخت پرامپت...")
 
     try:
-        # گرفتن کانفیگ از Agenta
-        config = ag.ConfigManager.get_from_registry(
-            app_slug="Prompt-Writer",
-            environment_slug="development",
+        # استفاده از asyncio.to_thread برای جلوگیری از قفل شدن ربات
+        # چون توابع agenta همگام (Sync) هستند، باید در ترد جداگانه اجرا شوند
+        config = await asyncio.to_thread(
+            lambda: ag.ConfigManager.get_from_registry(
+                app_slug="Prompt-Writer",
+                environment_slug="development",
+            )
         )
 
         logger.info("✅ Agenta config loaded successfully")
 
-        # فرض: داخل Agenta یک فیلد prompt داری
-    
         # گرفتن prompt از config
         prompt_template = config.get("prompt")
 
@@ -123,36 +111,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             raise ValueError("❌ کلید 'prompt' در Agenta config پیدا نشد")
 
         template_text = extract_prompt_text(prompt_template)
-        final_prompt = template_text.replace("{{user_idea}}", user_text)
+        
+        # جایگذاری متن کاربر در تمپلیت
+        if "{{user_idea}}" in template_text:
+            final_prompt = template_text.replace("{{user_idea}}", user_text)
+        else:
+            final_prompt = f"{template_text}\n\nUser Idea: {user_text}"
 
         logger.info("🧠 Prompt generated successfully")
 
-        await update.message.reply_text(
+        # ویرایش پیام فوری و ارسال نتیجه
+        await status_message.edit_text(
             "🧠 پرامپت آماده:\n\n" + final_prompt
         )
 
-
     except Exception as e:
         logger.exception("❌ Error while generating prompt")
-        await update.message.reply_text(
+        await status_message.edit_text(
             "❌ خطا در ساخت پرامپت:\n" + str(e)
         )
 
-# تعریف logger
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO)
-
-application = Application.builder().token(BOT_TOKEN).build()
-application.add_handler(CommandHandler("start", start))
-application.add_handler(
-    MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-)
-application.add_error_handler(error_handler)
-
+# ================= MAIN =================
 def main():
     logger.info("📌 Entered main()")
 
-    # 🔹 Fake server در Thread
+    # 🔹 Fake server در Thread (برای زنده نگه داشتن اپلیکیشن)
     threading.Thread(
         target=start_fake_server,
         daemon=True
@@ -160,10 +143,19 @@ def main():
 
     logger.info("🌐 Fake server started")
 
-    # 🔹 Bot در Main Thread
+    # 🔹 ساخت اپلیکیشن تلگرام
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # اضافه کردن هندلرها
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
+    )
+    application.add_error_handler(error_handler)
+
+    # 🔹 اجرای ربات
     logger.info("🤖 Telegram bot started (Polling)")
     application.run_polling()
 
 if __name__ == "__main__":
     main()
-
