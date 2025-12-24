@@ -11,7 +11,10 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
-import agenta as ag  # استفاده از کلاینت خود Agenta
+import agenta as ag
+# اصلاح ایمپورت کلاینت:
+# به جای استفاده از ag.Client (که وجود ندارد)، آن را از زیرپوشه client وارد می‌کنیم
+from agenta.client import Client 
 from dotenv import load_dotenv
 
 # ================= تنظیمات =================
@@ -32,8 +35,8 @@ if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
 
 # ================= کلاینت Agenta =================
-# ایجاد کلاینت برای اجرای اپلیکیشن‌ها
-client = ag.Client(api_key=AGENTA_API_KEY)
+# استفاده از کلاس Client که مستقیماً ایمپورت کردیم
+client = Client(api_key=AGENTA_API_KEY)
 
 try:
     ag.init()
