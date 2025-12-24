@@ -62,21 +62,46 @@ def start_fake_server():
     server.serve_forever()
 
 def extract_prompt_text(prompt_template):
+    # --- بخش دیباگ (برای فهمیدن مشکل) ---
+    logger.info(f"DEBUG - نوع داده دریافتی: {type(prompt_template)}")
+    logger.info(f"DEBUG - محتوا: {prompt_template}")
+    # ----------------------------------------
+
+    # اگر رشته ساده بود، همان را برگردان
     if isinstance(prompt_template, str):
         return prompt_template
 
-    elif isinstance(prompt_template, dict):
-        for key in ["text", "template", "fa", "en", "body", "content"]:
+    # اگر دیکشنری بود
+    if isinstance(prompt_template, dict):
+        # اولویت با کلیدهای مشخص
+        priority_keys = ["text", "template", "fa", "en", "body", "content", "prompt", "system", "user"]
+        for key in priority_keys:
             value = prompt_template.get(key)
             if isinstance(value, str):
                 return value
             elif isinstance(value, dict):
-                for subkey in ["fa", "en", "text"]:
+                # بررسی لایه دوم
+                for subkey in ["fa", "en", "text", "content"]:
                     subvalue = value.get(subkey)
                     if isinstance(subvalue, str):
                         return subvalue
 
-    raise ValueError("قالب پرامپت قابل تبدیل به متن نیست.")
+        # اگر کلیدهای بالا پیدا نشد، **تمام مقادیر** را نگاه کن
+        logger.warning("🔍 کلیدهای استاندارد پیدا نشد، جستجوی کلی...")
+        for key, value in prompt_template.items():
+            if isinstance(value, str) and len(value) > 10: # فرض بر این است که متن طولانی‌تر از ۱۰ کاراکتر است
+                logger.info(f"✅ متن کلید '{key}' انتخاب شد.")
+                return value
+
+    # اگر لیست بود (مثلاً مکالمه چت)
+    if isinstance(prompt_template, list):
+        # تلاش برای تبدیل لیست به متن
+        try:
+            return " ".join(str(i) for i in prompt_template)
+        except:
+            pass
+
+    raise ValueError(f"قالب پرامپت قابل تبدیل به متن نیست. ساختار: {prompt_template}")
 
 # ================= TELEGRAM HANDLERS =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,12 +114,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
 
-    # ارسال پیام فوری (چون Agenta ممکن است طول بکشد)
     status_message = await update.message.reply_text("⏳ در حال ساخت پرامپت...")
 
     try:
-        # استفاده از asyncio.to_thread برای جلوگیری از قفل شدن ربات
-        # چون توابع agenta همگام (Sync) هستند، باید در ترد جداگانه اجرا شوند
+        # استفاده از ترد جداگانه برای جلوگیری از قفل شدن
         config = await asyncio.to_thread(
             lambda: ag.ConfigManager.get_from_registry(
                 app_slug="Prompt-Writer",
@@ -110,9 +133,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not prompt_template:
             raise ValueError("❌ کلید 'prompt' در Agenta config پیدا نشد")
 
+        # استفاده از تابع اصلاح شده
         template_text = extract_prompt_text(prompt_template)
         
-        # جایگذاری متن کاربر در تمپلیت
+        # جایگذاری متن کاربر
         if "{{user_idea}}" in template_text:
             final_prompt = template_text.replace("{{user_idea}}", user_text)
         else:
@@ -120,7 +144,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         logger.info("🧠 Prompt generated successfully")
 
-        # ویرایش پیام فوری و ارسال نتیجه
         await status_message.edit_text(
             "🧠 پرامپت آماده:\n\n" + final_prompt
         )
