@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import requests
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -26,24 +27,17 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
+# آدرس صحیح که از لاگ‌های شما استخراج شد
+AGENTA_API_URL = "https://cloud.agenta.ai"
+
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
 
-# ================= Agenta Init =================
 try:
     ag.init()
-    logger.info("✅ Agenta initialized.")
-    
-    # --- بخش دیباگ: چاپ لیست متدها ---
-    if hasattr(ag, 'client'):
-        logger.info(f"🔍 Client Type: {type(ag.client)}")
-        # چاپ تمام متدهای عمومی (که با _ شروع نشده‌اند)
-        methods = [m for m in dir(ag.client) if not m.startswith('_')]
-        logger.info(f"🔍 Available Client Methods: {methods}")
-    else:
-        logger.error("❌ ag.client not found!")
+    logger.info("Agenta initialized.")
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
@@ -65,12 +59,76 @@ def start_fake_server():
 
 # ================= هندلرهای تلگرام =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ربات آماده است.")
+    await update.message.reply_text(
+        "🤖 سلام!\nایده‌ات رو بفرست تا برات پردازش کنم."
+    )
     logger.info("/start received")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # فعلا کاری نکن، فقط بگو متوجه شدیم
-    await update.message.reply_text("در حال دریافت اطلاعات از کلاینت...")
+    user_text = update.message.text
+    logger.info("📩 User message received: %s", user_text)
+
+    status_message = await update.message.reply_text("⏳ در حال پردازش...")
+
+    try:
+        # 1. دریافت کانفیگ برای پیدا کردن نام متغیر ورودی
+        config = await asyncio.to_thread(
+            ag.ConfigManager.get_from_registry,
+            app_slug="Prompt-Writer",
+            environment_slug="development"
+        )
+        
+        llm_config = config.get("llm_config", {})
+        input_keys = llm_config.get("input_keys", [])
+        target_key = input_keys[0] if input_keys else "user_idea"
+        
+        logger.info(f"🔍 Target Key: {target_key}")
+
+        # 2. ارسال درخواست مستقیم به API با آدرس درست
+        # ساخت آدرس کامل برای اجرا
+        endpoint = f"{AGENTA_API_URL}/api/v1/applications/Prompt-Writer/environments/development/run"
+        
+        headers = {
+            "Authorization": f"Bearer {AGENTA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "inputs": {
+                target_key: user_text
+            }
+        }
+
+        logger.info(f"📤 Sending POST to: {endpoint}")
+
+        # ارسال درخواست
+        response = await asyncio.to_thread(
+            requests.post,
+            endpoint,
+            headers=headers,
+            json=payload
+        )
+
+        # بررسی وضعیت
+        if response.status_code != 200:
+            logger.error(f"Agenta Error {response.status_code}: {response.text}")
+            raise ValueError(f"خطا از سرور Agenta: {response.status_code}")
+
+        # دریافت نتیجه
+        result_data = response.json()
+        
+        # استخراج متن نهایی. ساختار معمولا 'data' یا 'output' است
+        final_output = result_data.get('data') or result_data.get('output') or result_data.get('result') or str(result_data)
+
+        logger.info("✅ Success")
+
+        await status_message.edit_text(f"🤖 پاسخ سیستم:\n\n{final_output}")
+
+    except Exception as e:
+        logger.exception("❌ Error in handle_message")
+        await status_message.edit_text(
+            f"❌ خطا:\n{str(e)}"
+        )
 
 def main():
     logger.info("📌 Entered main()")
