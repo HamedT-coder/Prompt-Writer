@@ -144,7 +144,7 @@ def main():
     logger.info("🌐 Fake server started")
 
     # 🔹 ساخت اپلیکیشن تلگرام
-    application = Application.builder().token(BOT_TOKEN).build()
+    application = Applicationbuilder().token(BOT_TOKEN).build()
     
     # اضافه کردن هندلرها
     application.add_handler(CommandHandler("start", start))
