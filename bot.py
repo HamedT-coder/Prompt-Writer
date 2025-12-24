@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import requests
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -27,17 +26,22 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
-# اصلاح مهم: پیش‌فرض را به api.agenta.ai تغییر دادیم
-AGENTA_API_URL = os.getenv("AGENTA_API_URL", "https://api.agenta.ai")
-
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
 
+# ================= Agenta Init =================
 try:
+    # این دستور کلاینت سراسری (ag.client) را آماده می‌کند
     ag.init()
-    logger.info("Agenta initialized.")
+    
+    # دیباگ: برای اطمینان چک می‌کنیم که کلاینت سراسری وجود دارد
+    if hasattr(ag, 'client'):
+        logger.info("✅ Agenta Global Client detected successfully.")
+    else:
+        logger.warning("⚠️ Agenta Global client not found.")
+        
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
@@ -68,70 +72,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
 
-    status_message = await update.message.reply_text("⏳ در حال پردازش با Agenta...")
+    status_message = await update.message.reply_text("⏳ در حال پردازش...")
 
     try:
-        # 1. دریافت کانفیگ (برای پیدا کردن کلید ورودی)
-        # اگر در لاگ قبلی دیدیم environment_slug = development بود، اینجا development می‌گذاریم
+        # 1. دریافت کانفیگ برای پیدا کردن نام متغیر (input_key)
         config = await asyncio.to_thread(
             ag.ConfigManager.get_from_registry,
             app_slug="Prompt-Writer",
-            environment_slug="development",
-            # variant_slug="default"  # اگر development نداشتید این را فعال کنید
+            environment_slug="development"
         )
         
-        logger.info("✅ Agenta config loaded")
-
-        # پیدا کردن کلید ورودی
         llm_config = config.get("llm_config", {})
         input_keys = llm_config.get("input_keys", [])
         target_key = input_keys[0] if input_keys else "user_idea"
         
-        logger.info(f"🔍 Detected input key: {target_key}")
+        logger.info(f"🔍 Target Key: {target_key}")
 
-        # 2. ارسال درخواست Run به API Agenta
-        # آدرس را با api.agenta.ai می‌سازیم
-        endpoint = f"{AGENTA_API_URL}/api/v1/applications/Prompt-Writer/environments/development/run"
+        # 2. اجرای درخواست با استفاده از کلاینت سراسری ag.client
+        # این روش احتمالا متد run دارد و آدرس را خودش مدیریت می‌کند
         
-        headers = {
-            "Authorization": f"Bearer {AGENTA_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
+        # ساخت پارامترها بر اساس متد معمول
+        run_params = {
+            "app_slug": "Prompt-Writer",
+            "environment_slug": "development",
             "inputs": {
                 target_key: user_text
             }
         }
 
-        logger.info(f"📤 POST Request to: {endpoint}")
+        logger.info(f"📤 Triggering run via ag.client...")
 
-        # استفاده از requests در ترد جداگانه
-        response = await asyncio.to_thread(
-            requests.post,
-            endpoint,
-            headers=headers,
-            json=payload
+        # اجرا در ترد جداگانه
+        result = await asyncio.to_thread(
+            ag.client.run, # فراخوانی متد run از کلاینت سراسری
+            **run_params
         )
 
-        if response.status_code != 200:
-            error_text = response.text
-            logger.error(f"Agenta API Error {response.status_code}: {error_text}")
-            raise ValueError(f"Agenta Error {response.status_code}: {error_text}")
+        logger.info("✅ Run executed successfully")
 
-        result_data = response.json()
+        # 3. نمایش نتیجه
+        final_output = str(result)
         
-        # استخراج متن خروجی
-        final_output = result_data.get('data') or result_data.get('result') or str(result_data)
-
-        logger.info("✅ Agenta response received")
-
-        await status_message.edit_text(f"🤖 پاسخ سیستم:\n\n{final_output}")
+        await status_message.edit_text(f"🤖 پاسخ:\n\n{final_output}")
 
     except Exception as e:
-        logger.exception("❌ Error in process")
+        logger.exception("❌ Error in run process")
+        # اگر خطا مربوط به نام متد بود، به کاربر پیشنهاد دیباگ می‌دهیم
         await status_message.edit_text(
-            f"❌ خطا در ارتباط:\n{str(e)}"
+            f"❌ خطا:\n{str(e)}\n\n"
+            "(اگر خطا مربوط به متد run بود، لطفا در کنسول لاگ را بفرستید)"
         )
 
 def main():
