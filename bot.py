@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import requests  # کتابخانه درخواست HTTP
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -12,9 +13,6 @@ from telegram.ext import (
     filters
 )
 import agenta as ag
-# اصلاح ایمپورت کلاینت:
-# به جای استفاده از ag.Client (که وجود ندارد)، آن را از زیرپوشه client وارد می‌کنیم
-from agenta.client import client 
 from dotenv import load_dotenv
 
 # ================= تنظیمات =================
@@ -28,15 +26,13 @@ load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
+# اگر AGENTA_API_URL وجود ندارد، آدرس پیش‌فرض کلاد را در نظر می‌گیریم
+AGENTA_API_URL = os.getenv("AGENTA_API_URL", "https://app.agenta.ai")
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
 if not AGENTA_API_KEY:
     raise RuntimeError("AGENTA_API_KEY not set")
-
-# ================= کلاینت Agenta =================
-# استفاده از کلاس Client که مستقیماً ایمپورت کردیم
-client = Client(api_key=AGENTA_API_KEY)
 
 try:
     ag.init()
@@ -74,51 +70,75 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     status_message = await update.message.reply_text("⏳ در حال پردازش با Agenta...")
 
     try:
-        # 1. دریافت اطلاعات کانفیگ (برای فهمیدن اینکه ورودی برنامه چیست)
-        # این فقط اطلاعات ساختاری را می‌خواند، اجرا نمی‌کند
+        # ----------------------------------------------------
+        # 1. دریافت کانفیگ برای پیدا کردن نام کلید ورودی (مثلا country)
+        # ----------------------------------------------------
+        # طبق کدی که خودت فرستاد بودی، از variant_slug="default" استفاده می‌کنیم
+        # اگر در پنل Agenta محیط "development" تعریف کردی می‌تونی اونو جایگزین کنی
+        
         config = await asyncio.to_thread(
-            lambda: ag.ConfigManager.get_from_registry(
-                app_slug="Prompt-Writer",
-                environment_slug="development",
-            )
+            ag.ConfigManager.get_from_registry,
+            app_slug="Prompt-Writer",
+            variant_slug="default", # یا environment_slug="development"
+            variant_version=None    # برای گرفتن آخرین نسخه
         )
-        logger.info("✅ Agenta config loaded for input detection")
+        
+        logger.info("✅ Agenta config loaded")
 
-        # 2. پیدا کردن کلیدهای ورودی (Input Keys)
-        # مثلا در لاگ قبلی دیدیم که 'country' بود. ممکنه 'user_idea' یا چیز دیگه ای باشه.
+        # پیدا کردن کلید ورودی
         llm_config = config.get("llm_config", {})
         input_keys = llm_config.get("input_keys", [])
-        
-        # اگر کلیدی مشخص نشده بود، از یک نام پیش‌فرض استفاده می‌کنیم
         target_key = input_keys[0] if input_keys else "user_idea"
         
         logger.info(f"🔍 Detected input key: {target_key}")
 
-        # 3. آماده سازی داده ورودی برای Agenta
-        # ما متن تلگرام را به کلید پیدا شده نسبت می‌دهیم
-        # مثلا: {"country": "تصویر یک ماشین"}
-        payload = {target_key: user_text}
+        # ----------------------------------------------------
+        # 2. ارسال درخواست اجرا (RUN) به آدرس HTTP Agenta
+        # ----------------------------------------------------
+        # ساخت آدرس API
+        endpoint = f"{AGENTA_API_URL}/api/v1/applications/Prompt-Writer/environments/default/run"
+        
+        headers = {
+            "Authorization": f"Bearer {AGENTA_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        
+        # دیتایی که می‌فرستیم: کلید پیدا شده + متن کاربر
+        payload = {
+            "inputs": {
+                target_key: user_text
+            }
+        }
 
-        # 4. اجرای اپلیکیشن روی سرور Agenta
-        # نکته: client.run متد همگام (Sync) است، پس باید در ترد جداگانه اجرا شود
-        logger.info("📤 Triggering Agenta Run...")
-        result = await asyncio.to_thread(
-            client.run,
-            app_slug="Prompt-Writer",
-            environment_slug="development",
-            input_data=payload
+        logger.info(f"📤 POST Request to Agenta: {endpoint}")
+
+        # استفاده از requests در ترد جداگانه برای جلوگیری از قفل شدن
+        response = await asyncio.to_thread(
+            requests.post,
+            endpoint,
+            headers=headers,
+            json=payload
         )
 
-        logger.info("✅ Agenta Run completed")
+        # بررسی وضعیت پاسخ
+        if response.status_code != 200:
+            raise ValueError(f"Agenta API Error {response.status_code}: {response.text}")
 
-        # 5. نمایش نتیجه به کاربر
-        # Agenta معمولاً رشته نهایی را برمی‌گرداند، اگر دیکشنری بود، متن آن را می‌گیریم
-        final_output = str(result) if not isinstance(result, str) else result
+        result_data = response.json()
+        
+        # استخراج متن خروجی. ساختار پاسخ Agenta معمولا شامل 'data' یا 'result' است.
+        # اگر ساختار متفاوت بود، در اینجا باید اصلاح شود.
+        final_output = result_data.get('data') or result_data.get('result') or str(result_data)
 
-        await status_message.edit_text(f"🤖 پاسخ سیستم:\n\n{final_output}")
+        logger.info("✅ Agenta response received")
+
+        # ----------------------------------------------------
+        # 3. ارسال پاسخ به کاربر
+        # ----------------------------------------------------
+        await status_message.edit_text(f"🤖 پاسخ:\n\n{final_output}")
 
     except Exception as e:
-        logger.exception("❌ Error in Agenta execution")
+        logger.exception("❌ Error in process")
         await status_message.edit_text(
             f"❌ خطا در ارتباط با Agenta:\n{str(e)}"
         )
