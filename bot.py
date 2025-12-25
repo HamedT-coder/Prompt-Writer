@@ -15,6 +15,7 @@ from agenta.sdk.types import PromptTemplate
 from agenta.client import Client
 import agenta as ag
 from dotenv import load_dotenv
+import requests
 
 # ================= تنظیمات =================
 logging.basicConfig(
@@ -57,28 +58,32 @@ def start_fake_server():
     server.serve_forever()
 
 # ================= هندلرهای تلگرام =================
-client = Client(
-    api_key=os.environ["AGENTA_API_KEY"],
-    host="https://cloud.agenta.ai"
-)
+Authorization: ApiKey YOUR_API_KEY
+``` :contentReference[oaicite:5]{index=5}
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    await update.message.reply_text("⏳ در حال اجرای Agenta...")
+    await update.message.reply_text("⏳ در حال دریافت پاسخ از Agenta...")
 
     try:
-        result = await asyncio.to_thread(
-            client.chat_completion,
-            app_slug="Prompt-Writer",
-            environment_slug="development",
-            inputs={"user_idea": user_text},
-        )
+        url = "https://cloud.agenta.ai/services/completion/run"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"ApiKey {os.getenv('AGENTA_API_KEY')}",
+        }
+        payload = {
+            "environment": "development",
+            "app": "Prompt-Writer",
+            "inputs": {"user_idea": user_text},
+        }
 
-        output = result.get("output", "❌ خروجی‌ای دریافت نشد")
-        await update.message.reply_text("🧠 خروجی نهایی:\n\n" + output)
+        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        data = response.json()
+        output = data.get("data") or data.get("output") or str(data)
+
+        await update.message.reply_text(f"🧠 خروجی:\n{output}")
 
     except Exception as e:
-        logger.exception("❌ Agenta execution failed")
         await update.message.reply_text(f"❌ خطا:\n{e}")
 
 def main():
