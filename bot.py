@@ -1,6 +1,7 @@
 import os
 import asyncio
 import logging
+import requests
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -23,14 +24,13 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# گرفتن توکن‌ها از فایل .env
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
-# --- استفاده از ساختار سایت Agenta برای تنظیم محیط ---
-# تنظیم کلید و هاست مستقیماً در متغیرهای محیطی (Environment Variables)
+# --- استفاده از ساختار سایت Agenta (طبق درخواست شما) ---
 os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
-os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai/api"
+# طبق لاگ‌ها، هاست اصلی cloud.agenta.ai است و خود SDK /api را اضافه می‌کند
+os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai"
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
@@ -39,9 +39,8 @@ if not AGENTA_API_KEY:
 
 # ================= Agenta Init =================
 try:
-    # اینیت با تنظیماتی که در os.environ گذاشتیم
     ag.init()
-    logger.info("✅ Agenta initialized with specified host.")
+    logger.info("✅ Agenta initialized (Host: %s)", os.environ.get("AGENTA_HOST"))
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
@@ -87,27 +86,54 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         logger.info(f"🔍 Target Key: {target_key}")
 
-        # 2. اجرای درخواست با استفاده از ag.client.run
-        # طبق لاگ‌ها، متد run در ag.client وجود دارد و این روش درست است
-        
-        logger.info(f"📤 Calling ag.client.run...")
+        # 2. تلاش برای اجرا با SDK (ag.client.apps.run)
+        result = None
+        try:
+            logger.info("📤 Attempting SDK Run (ag.client.apps.run)...")
+            
+            # فرض بر این است که متد run در زیرمجموعه apps قرار دارد
+            result = await asyncio.to_thread(
+                ag.client.apps.run,
+                app_slug="Prompt-Writer",
+                environment_slug="development",
+                inputs={target_key: user_text}
+            )
+            logger.info("✅ SDK Run Successful")
 
-        # اجرا در ترد جداگانه (چون ag.client.run ممکن است همگام باشد)
-        result = await asyncio.to_thread(
-            ag.client.run,
-            app_slug="Prompt-Writer",
-            environment_slug="development",
-            inputs={target_key: user_text}
-        )
+        except (AttributeError, TypeError) as sdk_err:
+            logger.warning(f"⚠️ SDK Method not found or failed: {sdk_err}")
+            logger.info("📤 Fallback to HTTP Request...")
 
-        logger.info("✅ Run successful")
+            # 3. روش پشتیبان: درخواست مستقیم HTTP (اگر SDK کار نکرد)
+            # با توجه به لاگ‌های شما، آدرس باید شامل /api باشد
+            # در حالت فال‌بک، ما آدرس کامل را دستی می‌سازیم
+            endpoint = f"https://cloud.agenta.ai/api/v1/applications/Prompt-Writer/environments/development/run"
+            
+            headers = {
+                "Authorization": f"Bearer {AGENTA_API_KEY}",
+                "Content-Type": "application/json"
+            }
+            payload = {
+                "inputs": {target_key: user_text}
+            }
 
-        # 3. نمایش نتیجه
-        # اگر نتیجه دیکشنری بود، سعی کن متنش را پیدا کن، اگر رشته بود همان را نشان بده
+            response = await asyncio.to_thread(
+                requests.post,
+                endpoint,
+                headers=headers,
+                json=payload
+            )
+
+            if response.status_code != 200:
+                raise ValueError(f"HTTP Error {response.status_code}: {response.text}")
+            
+            result_data = response.json()
+            result = result_data.get('data') or result_data.get('text') or str(result_data)
+
+        # 4. نمایش نتیجه
         final_output = str(result)
         if isinstance(result, dict):
-            # تلاش برای پیدا کردن متن اصلی در دیکشنری خروجی
-            final_output = result.get('data') or result.get('text') or result.get('response') or result.get('message') or str(result)
+            final_output = result.get('data') or result.get('output') or result.get('text') or str(result)
 
         await status_message.edit_text(f"🤖 پاسخ:\n\n{final_output}")
 
