@@ -12,7 +12,7 @@ from telegram.ext import (
     filters 
     )
 from agenta.sdk.types import PromptTemplate
-from agenta.client import AgentaClient
+from agenta.client import Client
 import agenta as ag
 from dotenv import load_dotenv
 
@@ -57,9 +57,7 @@ def start_fake_server():
     server.serve_forever()
 
 # ================= هندلرهای تلگرام =================
-client = Agenta(api_key=os.environ["AGENTA_API_KEY"])
-
-client = AgentaClient(
+client = Client(
     api_key=os.environ["AGENTA_API_KEY"],
     host="https://cloud.agenta.ai"
 )
@@ -70,7 +68,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         result = await asyncio.to_thread(
-            client.chat,
+            client.chat_completion,
             app_slug="Prompt-Writer",
             environment_slug="development",
             inputs={"user_idea": user_text},
@@ -80,7 +78,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("🧠 خروجی نهایی:\n\n" + output)
 
     except Exception as e:
-        logger.exception("Agenta execution failed")
+        logger.exception("❌ Agenta execution failed")
         await update.message.reply_text(f"❌ خطا:\n{e}")
 
 def main():
