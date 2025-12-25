@@ -9,9 +9,8 @@ from telegram.ext import (
     CommandHandler,
     MessageHandler,
     ContextTypes,
-    filters
-)
-# ایمپورت طبق درخواست شما
+    filters 
+    )
 from agenta.sdk.types import PromptTemplate
 import agenta as ag
 from dotenv import load_dotenv
@@ -57,43 +56,29 @@ def start_fake_server():
     server.serve_forever()
 
 # ================= هندلرهای تلگرام =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ربات آماده است. ورودی خود را بفرستید.")
-    logger.info("/start received")
+client = Agenta(api_key=os.environ["AGENTA_API_KEY"])
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    await update.message.reply_text("⏳ در حال تولید پرامپت با هوش مصنوعی...")
+    await update.message.reply_text("⏳ در حال ساخت پرامپت با Agenta...")
 
     try:
         result = await asyncio.to_thread(
-            ag.run,
+            client.chat,
             app_slug="Prompt-Writer",
             environment_slug="development",
             inputs={
-                "user_idea": user_text  # ⚠️ دقیقاً باید با input_keys یکی باشد
+                "user_idea": user_text
             }
         )
 
-        output = result.get("output")
-        if not output:
-            raise ValueError("خروجی‌ای از Agenta دریافت نشد")
-
-        await update.message.reply_text(
-            "🧠 پرامپت نهایی:\n\n" + output
-        )
+        output = result.get("output", "❌ خروجی‌ای دریافت نشد")
+        await update.message.reply_text("🧠 پرامپت نهایی:\n\n" + output)
 
     except Exception as e:
-        logger.exception("Agenta run failed")
-        await update.message.reply_text(f"❌ خطا:\n{e}")
+        logger.exception("Agenta execution failed")
+        await update.message.reply_text(f"❌ خطا در اجرای Agenta:\n{e}")
 
-    except Exception as e:
-        logger.exception("❌ Error")
-        # اگر ایمپورت PromptTemplate کار نکرد، به ما بگو
-        if "PromptTemplate" in str(e) or "No module named" in str(e):
-            await status_message.edit_text("❌ خطا: کلاس PromptTemplate در این نسخه از Agenta SDK پیدا نشد.")
-        else:
-            await status_message.edit_text(f"❌ خطا:\n{str(e)}")
 
 def main():
     logger.info("📌 Entered main()")
