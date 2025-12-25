@@ -12,7 +12,6 @@ from telegram.ext import (
     filters 
     )
 from agenta.sdk.types import PromptTemplate
-from agenta.client import Client
 import agenta as ag
 from dotenv import load_dotenv
 import requests
