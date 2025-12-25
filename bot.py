@@ -58,33 +58,68 @@ def start_fake_server():
     server.serve_forever()
 
 # ================= هندلرهای تلگرام =================
-Authorization: ApiKey YOUR_API_KEY
-``` :contentReference[oaicite:5]{index=5}
+AGENTA_BASE_URL = "https://cloud.agenta.ai/api"
+logger = logging.getLogger(__name__)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    await update.message.reply_text("⏳ در حال دریافت پاسخ از Agenta...")
+    logger.info("📩 User message received: %s", user_text)
+
+    status_msg = await update.message.reply_text("⏳ در حال ساخت پرامپت با Agenta...")
+
+    url = f"{AGENTA_BASE_URL}/invocations"
+    headers = {
+        "Authorization": f"ApiKey {AGENTA_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    payload = {
+        "app_slug": "Prompt-Writer",
+        "environment_slug": "development",
+        "inputs": {
+            "user_idea": user_text
+        }
+    }
 
     try:
-        url = "https://cloud.agenta.ai/services/completion/run"
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"ApiKey {os.getenv('AGENTA_API_KEY')}",
-        }
-        payload = {
-            "environment": "development",
-            "app": "Prompt-Writer",
-            "inputs": {"user_idea": user_text},
-        }
+        response = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
 
-        response = requests.post(url, json=payload, headers=headers, timeout=60)
+        logger.info("📡 Agenta status code: %s", response.status_code)
+
+        if response.status_code != 200:
+            logger.error("❌ Agenta error response: %s", response.text)
+            await status_msg.edit_text(
+                f"❌ خطا از Agenta\nStatus: {response.status_code}\n{response.text}"
+            )
+            return
+
         data = response.json()
-        output = data.get("data") or data.get("output") or str(data)
+        logger.info("✅ Agenta response received")
 
-        await update.message.reply_text(f"🧠 خروجی:\n{output}")
+        # تلاش برای استخراج خروجی
+        output = (
+            data.get("output")
+            or data.get("data")
+            or data.get("result")
+            or str(data)
+        )
+
+        await status_msg.edit_text(
+            "🧠 پرامپت تولید شده:\n\n" + output
+        )
+
+    except requests.exceptions.Timeout:
+        logger.exception("⏱ Timeout")
+        await status_msg.edit_text("❌ خطا: زمان پاسخ Agenta طولانی شد")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ خطا:\n{e}")
+        logger.exception("❌ Unexpected error")
+        await status_msg.edit_text(f"❌ خطای غیرمنتظره:\n{str(e)}")
 
 def main():
     logger.info("📌 Entered main()")
