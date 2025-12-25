@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import requests
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -12,6 +11,8 @@ from telegram.ext import (
     ContextTypes,
     filters
 )
+# ایمپورت طبق درخواست شما
+from agenta.sdk.types import PromptTemplate
 import agenta as ag
 from dotenv import load_dotenv
 
@@ -27,14 +28,11 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
-# تنظیم محیط Agenta
 os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
 os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai/api"
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
-if not AGENTA_API_KEY:
-    raise RuntimeError("AGENTA_API_KEY not set")
 
 try:
     ag.init()
@@ -60,80 +58,61 @@ def start_fake_server():
 
 # ================= هندلرهای تلگرام =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ربات آماده است.")
+    await update.message.reply_text("ربات آماده است. ورودی خود را بفرستید.")
     logger.info("/start received")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    status_message = await update.message.reply_text("⏳ در حال پردازش...")
+    status_message = await update.message.reply_text("⏳ در حال فرمت کردن پرامپت...")
     logger.info("📩 User message received: %s", user_text)
 
     try:
-        # 1. دریافت کانفیگ (که درست کار می‌کند)
+        # 1. دریافت کانفیگ
         config = await asyncio.to_thread(
             ag.ConfigManager.get_from_registry,
             app_slug="Prompt-Writer",
             environment_slug="development"
         )
         
-        # 2. استخراج اطلاعات از کانفیگ
+        # 2. استخراج کلید ورودی (مثلا country)
         llm_config = config.get("llm_config", {})
         input_keys = llm_config.get("input_keys", [])
         target_key = input_keys[0] if input_keys else "user_idea"
+
+        logger.info(f"🔍 Using Input Key: {target_key}")
+
+        # 3. ساخت نمونه PromptTemplate و فرمت کردن
+        # طبق نمونه شما: PromptTemplate(**config["prompt"])
+        template = PromptTemplate(**config["prompt"])
         
-        logger.info(f"🔍 Found Input Key: {target_key}")
-        logger.info(f"🔍 User Text: {user_text}")
-
-        # 3. اجرای درخواست (Run)
-        # طبق استانداردهای Agenta، آدرس اجرا به این صورت است
-        run_url = f"https://cloud.agenta.ai/api/v1/applications/Prompt-Writer/environments/development/run"
+        # فرمت کردن با ورودی کاربر
+        # مثال: .format(country="France") -> ما متغیر را داینامیک می‌کنیم
+        formatted_prompt = template.format(**{target_key: user_text})
         
-        headers = {
-            "Authorization": f"Bearer {AGENTA_API_KEY}",
-            "Content-Type": "application/json"
-        }
-        
-        payload = {
-            "inputs": {target_key: user_text}
-        }
+        logger.info("✅ Prompt formatted successfully.")
 
-        logger.info(f"📤 Sending POST to: {run_url}")
-        logger.info(f"📤 Payload: {payload}")
+        # 4. نمایش نتیجه
+        # اگر خروجی لیست پیام‌ها (Chat Format) باشد، آن را خوانا می‌کنیم
+        output_text = ""
+        if isinstance(formatted_prompt, list):
+            output_text = "🤖 ساختار پرامپت نهایی:\n\n"
+            for msg in formatted_prompt:
+                if isinstance(msg, dict):
+                    role = msg.get('role', 'unknown')
+                    content = msg.get('content', '')
+                    output_text += f"**{role.upper()}**: {content}\n\n"
+        else:
+            output_text = f"🤖 پرامپت نهایی:\n\n{formatted_prompt}"
 
-        response = await asyncio.to_thread(
-            requests.post,
-            run_url,
-            headers=headers,
-            json=payload
-        )
-
-        # 4. مدیریت پاسخ
-        if response.status_code != 200:
-            error_text = response.text
-            logger.error(f"Agenta Error {response.status_code}: {error_text}")
-            
-            # اگر خطای دسترسی بود
-            if "Unauthorized" in error_text or "401" in str(response.status_code):
-                raise ValueError("خطا 401: کلید API شما دسترسی اجرا (Write) را ندارد یا اشتباه است.")
-            else:
-                raise ValueError(f"خطای سرور: {response.status_code}")
-
-        # موفقیت آمیز بود
-        result_data = response.json()
-        
-        # استخراج متن نهایی
-        # معمولا خروجی در کدی به نام data, output یا text است
-        final_output = result_data.get('data') or result_data.get('output') or result_data.get('text') or str(result_data)
-
-        logger.info("✅ Run Successful")
-        
-        await status_message.edit_text(f"🤖 پاسخ هوش مصنوعی:\n\n{final_output}")
+        await status_message.edit_text(output_text)
 
     except Exception as e:
         logger.exception("❌ Error")
-        await status_message.edit_text(
-            f"❌ خطا:\n{str(e)}"
-        )
+        # اگر ایمپورت PromptTemplate کار نکرد، به ما بگو
+        if "PromptTemplate" in str(e) or "No module named" in str(e):
+            await status_message.edit_text("❌ خطا: کلاس PromptTemplate در این نسخه از Agenta SDK پیدا نشد.")
+        else:
+            await status_message.edit_text(f"❌ خطا:\n{str(e)}")
 
 def main():
     logger.info("📌 Entered main()")
