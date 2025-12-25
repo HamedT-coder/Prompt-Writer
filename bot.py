@@ -1,7 +1,6 @@
 import os
 import asyncio
 import logging
-import requests
 from telegram import Update
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
@@ -27,10 +26,9 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 AGENTA_API_KEY = os.getenv("AGENTA_API_KEY")
 
-# --- استفاده از ساختار سایت Agenta (طبق درخواست شما) ---
+# --- تنظیم دقیقا طبق ساختار سایت Agenta ---
 os.environ["AGENTA_API_KEY"] = AGENTA_API_KEY
-# طبق لاگ‌ها، هاست اصلی cloud.agenta.ai است و خود SDK /api را اضافه می‌کند
-os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai"
+os.environ["AGENTA_HOST"] = "https://cloud.agenta.ai/api"
 
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN not set")
@@ -40,7 +38,7 @@ if not AGENTA_API_KEY:
 # ================= Agenta Init =================
 try:
     ag.init()
-    logger.info("✅ Agenta initialized (Host: %s)", os.environ.get("AGENTA_HOST"))
+    logger.info("✅ Agenta initialized.")
 except Exception as e:
     logger.error(f"Agenta init failed: {e}")
 
@@ -62,85 +60,38 @@ def start_fake_server():
 
 # ================= هندلرهای تلگرام =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🤖 سلام!\nایده‌ات رو بفرست تا برات پردازش کنم."
-    )
+    await update.message.reply_text("ربات آماده است. هر متنی بفرستید کانفیگ را چاپ می‌کنم.")
     logger.info("/start received")
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_text = update.message.text
-    logger.info("📩 User message received: %s", user_text)
+    # هر پیامی که کاربر بفرستد، فقط باعث می‌شود کانفیگ لود و چاپ شود
+    logger.info("📩 Fetching config...")
 
-    status_message = await update.message.reply_text("⏳ در حال پردازش...")
+    status_message = await update.message.reply_text("⏳ در حال دریافت کانفیگ...")
 
     try:
-        # 1. دریافت کانفیگ برای پیدا کردن نام متغیر ورودی
-        config = ag.ConfigManager.get_from_registry(
+        # دریافت کانفیگ طبق ساختار سایت
+        config = await asyncio.to_thread(
+            ag.ConfigManager.get_from_registry,
             app_slug="Prompt-Writer",
             environment_slug="development"
         )
         
-        llm_config = config.get("llm_config", {})
-        input_keys = llm_config.get("input_keys", [])
-        target_key = input_keys[0] if input_keys else "user_idea"
-        
-        logger.info(f"🔍 Target Key: {target_key}")
+        logger.info("✅ Config received.")
 
-        # 2. تلاش برای اجرا با SDK (ag.client.apps.run)
-        result = None
-        try:
-            logger.info("📤 Attempting SDK Run (ag.client.apps.run)...")
-            
-            # فرض بر این است که متد run در زیرمجموعه apps قرار دارد
-            result = await asyncio.to_thread(
-                ag.client.apps.run,
-                app_slug="Prompt-Writer",
-                environment_slug="development",
-                inputs={target_key: user_text}
-            )
-            logger.info("✅ SDK Run Successful")
+        # تبدیل آبجکت کانفیگ به رشته برای نمایش در تلگرام
+        config_text = str(config)
 
-        except (AttributeError, TypeError) as sdk_err:
-            logger.warning(f"⚠️ SDK Method not found or failed: {sdk_err}")
-            logger.info("📤 Fallback to HTTP Request...")
+        # محدودیت طول پیام تلگرام (4096 کاراکتر)
+        if len(config_text) > 4000:
+            config_text = config_text[:4000] + "\n\n... (متن کوتاه شد)"
 
-            # 3. روش پشتیبان: درخواست مستقیم HTTP (اگر SDK کار نکرد)
-            # با توجه به لاگ‌های شما، آدرس باید شامل /api باشد
-            # در حالت فال‌بک، ما آدرس کامل را دستی می‌سازیم
-            endpoint = f"https://cloud.agenta.ai/api/v1/applications/Prompt-Writer/environments/development/run"
-            
-            headers = {
-                "Authorization": f"Bearer {AGENTA_API_KEY}",
-                "Content-Type": "application/json"
-            }
-            payload = {
-                "inputs": {target_key: user_text}
-            }
-
-            response = await asyncio.to_thread(
-                requests.post,
-                endpoint,
-                headers=headers,
-                json=payload
-            )
-
-            if response.status_code != 200:
-                raise ValueError(f"HTTP Error {response.status_code}: {response.text}")
-            
-            result_data = response.json()
-            result = result_data.get('data') or result_data.get('text') or str(result_data)
-
-        # 4. نمایش نتیجه
-        final_output = str(result)
-        if isinstance(result, dict):
-            final_output = result.get('data') or result.get('output') or result.get('text') or str(result)
-
-        await status_message.edit_text(f"🤖 پاسخ:\n\n{final_output}")
+        await status_message.edit_text(f"📋 کانفیگ دریافتی:\n\n{config_text}")
 
     except Exception as e:
-        logger.exception("❌ Error in handle_message")
+        logger.exception("❌ Error fetching config")
         await status_message.edit_text(
-            f"❌ خطا:\n{str(e)}"
+            f"❌ خطا در دریافت کانفیگ:\n{str(e)}"
         )
 
 def main():
