@@ -57,6 +57,19 @@ def start_fake_server():
     server.serve_forever()
 
 # ================= هندلرهای تلگرام =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("🚀 /start command received")
+
+    if not update.message:
+        logger.warning("⚠️ /start received but update.message is None")
+        return
+
+    await update.message.reply_text(
+        "🤖 سلام!\n\n"
+        "ایده‌ات رو بفرست تا با استفاده از Agenta برات یک پرامپت حرفه‌ای بسازم.\n\n"
+        "✍️ فقط کافیه توضیح کوتاهت رو ارسال کنی."
+    )
+
 AGENTA_BASE_URL = "https://cloud.agenta.ai/api"
 logger = logging.getLogger(__name__)
 
