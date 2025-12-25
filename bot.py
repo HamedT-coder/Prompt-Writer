@@ -12,7 +12,7 @@ from telegram.ext import (
     filters 
     )
 from agenta.sdk.types import PromptTemplate
-from agenta import agenta
+from agenta import Agenta
 import agenta as ag
 from dotenv import load_dotenv
 
