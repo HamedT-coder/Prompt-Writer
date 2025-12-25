@@ -63,48 +63,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
-    status_message = await update.message.reply_text("⏳ در حال فرمت کردن پرامپت...")
-    logger.info("📩 User message received: %s", user_text)
+    await update.message.reply_text("⏳ در حال تولید پرامپت با هوش مصنوعی...")
 
     try:
-        # 1. دریافت کانفیگ
-        config = await asyncio.to_thread(
-            ag.ConfigManager.get_from_registry,
+        result = await asyncio.to_thread(
+            ag.run,
             app_slug="Prompt-Writer",
-            environment_slug="development"
+            environment_slug="development",
+            inputs={
+                "user_idea": user_text  # ⚠️ دقیقاً باید با input_keys یکی باشد
+            }
         )
-        
-        # 2. استخراج کلید ورودی (مثلا country)
-        llm_config = config.get("llm_config", {})
-        input_keys = llm_config.get("input_keys", [])
-        target_key = input_keys[0] if input_keys else "user_idea"
 
-        logger.info(f"🔍 Using Input Key: {target_key}")
+        output = result.get("output")
+        if not output:
+            raise ValueError("خروجی‌ای از Agenta دریافت نشد")
 
-        # 3. ساخت نمونه PromptTemplate و فرمت کردن
-        # طبق نمونه شما: PromptTemplate(**config["prompt"])
-        template = PromptTemplate(**config["prompt"])
-        
-        # فرمت کردن با ورودی کاربر
-        # مثال: .format(country="France") -> ما متغیر را داینامیک می‌کنیم
-        formatted_prompt = template.format(**{target_key: user_text})
-        
-        logger.info("✅ Prompt formatted successfully.")
+        await update.message.reply_text(
+            "🧠 پرامپت نهایی:\n\n" + output
+        )
 
-        # 4. نمایش نتیجه
-        # اگر خروجی لیست پیام‌ها (Chat Format) باشد، آن را خوانا می‌کنیم
-        output_text = ""
-        if isinstance(formatted_prompt, list):
-            output_text = "🤖 ساختار پرامپت نهایی:\n\n"
-            for msg in formatted_prompt:
-                if isinstance(msg, dict):
-                    role = msg.get('role', 'unknown')
-                    content = msg.get('content', '')
-                    output_text += f"**{role.upper()}**: {content}\n\n"
-        else:
-            output_text = f"🤖 پرامپت نهایی:\n\n{formatted_prompt}"
-
-        await status_message.edit_text(output_text)
+    except Exception as e:
+        logger.exception("Agenta run failed")
+        await update.message.reply_text(f"❌ خطا:\n{e}")
 
     except Exception as e:
         logger.exception("❌ Error")
