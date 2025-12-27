@@ -79,27 +79,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     status_msg = await update.message.reply_text("⏳ در حال ساخت پرامپت با Agenta...")
 
-    url = f"{AGENTA_BASE_URL}/invocations"
+    url = (
+    "https://cloud.agenta.ai/api/apps/"
+    "Prompt-Writer/environments/development/runs"
+    )
+
     headers = {
-        "Authorization": f"ApiKey {AGENTA_API_KEY}",
-        "Content-Type": "application/json",
+    "Authorization": f"Bearer {AGENTA_API_KEY}",
+    "Content-Type": "application/json",
     }
 
     payload = {
-        "app_slug": "Prompt-Writer",
-        "environment_slug": "development",
-        "inputs": {
-            "user_idea": user_text
+    "inputs": {
+        "user_idea": user_text
         }
     }
 
+
     try:
         response = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=60
-        )
+        url,
+        headers=headers,
+        json=payload,
+        timeout=90
+    )
+
 
         logger.info("📡 Agenta status code: %s", response.status_code)
 
@@ -115,11 +119,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # تلاش برای استخراج خروجی
         output = (
-            data.get("output")
-            or data.get("data")
-            or data.get("result")
+            data.get("outputs", {}).get("output")
+            or data.get("outputs")
             or str(data)
         )
+
 
         await status_msg.edit_text(
             "🧠 پرامپت تولید شده:\n\n" + output
