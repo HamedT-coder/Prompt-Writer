@@ -77,38 +77,36 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     logger.info("📩 User message received: %s", user_text)
 
-    status_msg = await update.message.reply_text("⏳ در حال ساخت پرامپت با Agenta...")
+    status_msg = await update.message.reply_text("⏳ در حال تولید خروجی با Agenta...")
 
     url = (
-    "https://cloud.agenta.ai/api/apps/"
-    "Prompt-Writer/environments/development/runs"
+        "https://cloud.agenta.ai/api/apps/"
+        "Prompt-Writer/environments/development/runs"
     )
 
     headers = {
-    "Authorization": f"Bearer {AGENTA_API_KEY}",
-    "Content-Type": "application/json",
+        "Authorization": f"Bearer {AGENTA_API_KEY}",
+        "Content-Type": "application/json",
     }
 
     payload = {
-    "inputs": {
-        "user_idea": user_text
+        "inputs": {
+            "user_idea": user_text
         }
     }
 
-
     try:
         response = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=90
-    )
-
+            url,
+            headers=headers,
+            json=payload,
+            timeout=90
+        )
 
         logger.info("📡 Agenta status code: %s", response.status_code)
 
         if response.status_code != 200:
-            logger.error("❌ Agenta error response: %s", response.text)
+            logger.error("❌ Agenta error: %s", response.text)
             await status_msg.edit_text(
                 f"❌ خطا از Agenta\nStatus: {response.status_code}\n{response.text}"
             )
@@ -117,25 +115,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         data = response.json()
         logger.info("✅ Agenta response received")
 
-        # تلاش برای استخراج خروجی
+        # خروجی معمولاً اینجاست
         output = (
-            data.get("outputs", {}).get("output")
-            or data.get("outputs")
-            or str(data)
+            data.get("output")
+            or data.get("result")
+            or data.get("data")
         )
 
+        if isinstance(output, dict):
+            output = output.get("text") or str(output)
 
         await status_msg.edit_text(
-            "🧠 پرامپت تولید شده:\n\n" + output
+            "🧠 خروجی نهایی:\n\n" + str(output)
         )
 
-    except requests.exceptions.Timeout:
-        logger.exception("⏱ Timeout")
-        await status_msg.edit_text("❌ خطا: زمان پاسخ Agenta طولانی شد")
-
     except Exception as e:
-        logger.exception("❌ Unexpected error")
-        await status_msg.edit_text(f"❌ خطای غیرمنتظره:\n{str(e)}")
+        logger.exception("❌ Error while calling Agenta")
+        await status_msg.edit_text(f"❌ خطا:\n{str(e)}")
+
 
 def main():
     logger.info("📌 Entered main()")
